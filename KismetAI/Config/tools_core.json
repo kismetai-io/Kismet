@@ -1,0 +1,564 @@
+[
+    {
+        "name": "read_blueprint",
+        "description": "Read a Blueprint graph. Also handles Animation Blueprints (UAnimBlueprint).\nModes:\n- \"describe\" (default): pseudo-code execution flow + node list. Use this FIRST to understand the graph. For Anim Blueprint graphs this renders an indented pose tree (sink first, pose inputs indented, bound assets in [brackets]); for a state-machine graph it lists entry->initial state, states (one-line content), conduits, aliases, and transitions (From -> To with crossfade/priority/auto-rule flags and a rule summary).\n- \"t3d\": stripped T3D export. Use with \"nodes\" to get T3D for specific nodes you need to edit — add include_linked=true to also get their directly-connected neighbors (pins + links) in the same call. PREFER a nodes-filtered read over re-exporting the whole graph when you only need to check or wire a few nodes (e.g. right after insert_node). Without \"nodes\", exports the entire graph (may be large).\n- \"overview\": full Blueprint structure (variables, functions, macros, components, interfaces, class settings). For Anim Blueprints this also reports the Target Skeleton and the anim-graph hierarchy (state machines, their states/transitions/conduits/aliases).\n\nGraph addressing (the \"graph\" field): a flat graph name, OR a path \"A/B/C\" for nested graphs. For Anim Blueprints the default graph (omit \"graph\") is the AnimGraph. Nested anim graphs are addressed by path: \"AnimGraph/Locomotion\" (a state machine named by its node), \"AnimGraph/Locomotion/Idle\" (a state's bound graph), \"AnimGraph/Locomotion/Idle->Walk\" (a transition rule graph, addressed by ENDPOINTS — object names like \"AnimationTransitionGraph_3\" are opaque, so use From->To; append \"#N\" for duplicate pairs, \"@blend\" for a custom blend graph). A bare unique nested name also resolves; an ambiguous name returns an error listing the candidate paths.\n\nReturns asset_revision: an opaque revision of the whole Blueprint package, including all graphs and Designer content. Pass the latest token as expected_revision on subsequent Blueprint or widget mutations. An intervening asset edit, rename, or replacement invalidates the token.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "blueprint": {
+                    "type": "string",
+                    "description": "Blueprint asset path, e.g. \"/Game/MyProject/BP_Test\""
+                },
+                "graph": {
+                    "type": "string",
+                    "description": "Graph name or nested path \"A/B/C\". Defaults to \"EventGraph\" for ordinary Blueprints, or the \"AnimGraph\" for Animation Blueprints. Example anim paths: \"AnimGraph/Locomotion\" (state machine), \"AnimGraph/Locomotion/Idle\" (state), \"AnimGraph/Locomotion/Idle->Walk\" (transition rule, endpoint-addressed; \"#N\" for duplicates, \"@blend\" for a custom blend graph)."
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": [
+                        "describe",
+                        "t3d",
+                        "overview"
+                    ],
+                    "description": "\"describe\" for graph execution flow (default), \"t3d\" for T3D export, \"overview\" for full Blueprint structure (variables, functions, macros, components, interfaces, class settings)."
+                },
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "Node names to export (t3d mode only). E.g. [\"K2Node_Event_0\", \"K2Node_CallFunction_0\"]. Omit for full graph."
+                },
+                "include_linked": {
+                    "type": "boolean",
+                    "description": "t3d mode with \"nodes\": also export every node directly linked to the named ones — one call shows a node plus its neighbors' real pins. Default false."
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": "Start index for T3D node pagination (t3d mode only). 0-based."
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of T3D node blocks to return (t3d mode only). Default: all."
+                }
+            },
+            "required": [
+                "blueprint"
+            ]
+        }
+    },
+    {
+        "name": "write_blueprint",
+        "description": "Inject T3D nodes into a Blueprint graph. Auto-compiles after injection.\n\n## T3D Format\nEach node is a Begin Object / End Object block. Pins are CustomProperties Pin lines.\n\n## Template: Function Call (e.g. PrintString)\n```\nBegin Object Class=/Script/BlueprintGraph.K2Node_CallFunction Name=\"K2Node_CallFunction_NEW\"\n   FunctionReference=(MemberParent=\"/Script/CoreUObject.Class'/Script/Engine.KismetSystemLibrary'\",MemberName=\"PrintString\")\n   NodePosX=400\n   NodePosY=0\n   NodeGuid=GUID_MYNODE\nCustomProperties Pin (PinId=LINK_EXEC_IN,PinName=\"execute\",PinType.PinCategory=\"exec\")\nCustomProperties Pin (PinId=LINK_EXEC_OUT,PinName=\"then\",Direction=\"EGPD_Output\",PinType.PinCategory=\"exec\")\nCustomProperties Pin (PinId=LINK_SELF,PinName=\"self\",PinType.PinCategory=\"object\",PinType.PinSubCategoryObject=\"/Script/CoreUObject.Class'/Script/Engine.KismetSystemLibrary'\",DefaultObject=\"/Script/Engine.Default__KismetSystemLibrary\",bHidden=True)\nCustomProperties Pin (PinId=LINK_INSTRING,PinName=\"InString\",PinType.PinCategory=\"string\",DefaultValue=\"Hello World\")\nEnd Object\n```\n\n## Template: Event (e.g. BeginPlay)\n```\nBegin Object Class=/Script/BlueprintGraph.K2Node_Event Name=\"K2Node_Event_NEW\"\n   EventReference=(MemberParent=\"/Script/CoreUObject.Class'/Script/Engine.Actor'\",MemberName=\"ReceiveBeginPlay\")\n   bOverrideFunction=True\n   NodeGuid=GUID_BEGINPLAY\nCustomProperties Pin (PinId=LINK_DELEGATE,PinName=\"OutputDelegate\",Direction=\"EGPD_Output\",PinType.PinCategory=\"delegate\",PinType.PinSubCategoryMemberReference=(MemberParent=\"/Script/CoreUObject.Class'/Script/Engine.Actor'\",MemberName=\"ReceiveBeginPlay\"))\nCustomProperties Pin (PinId=LINK_THEN,PinName=\"then\",Direction=\"EGPD_Output\",PinType.PinCategory=\"exec\")\nEnd Object\n```\n\n## Template: Branch\n```\nBegin Object Class=/Script/BlueprintGraph.K2Node_IfThenElse Name=\"K2Node_IfThenElse_NEW\"\n   NodePosX=300\n   NodeGuid=GUID_BRANCH\nCustomProperties Pin (PinId=LINK_BR_EXEC,PinName=\"execute\",PinType.PinCategory=\"exec\")\nCustomProperties Pin (PinId=LINK_BR_THEN,PinName=\"then\",Direction=\"EGPD_Output\",PinType.PinCategory=\"exec\")\nCustomProperties Pin (PinId=LINK_BR_ELSE,PinName=\"else\",Direction=\"EGPD_Output\",PinType.PinCategory=\"exec\")\nCustomProperties Pin (PinId=LINK_BR_COND,PinName=\"Condition\",PinType.PinCategory=\"bool\")\nEnd Object\n```\nNOTE: Branch output exec pins are named \"then\" (true) and \"else\" (false) internally — NOT \"True\"/\"False\" (those are only display labels). Use \"then\"/\"else\" in edit_blueprint and T3D.\n\n## Pin Categories (IMPORTANT)\n- exec: execution flow pins\n- bool: boolean\n- int: integer\n- real: float/double (use PinSubCategory=\"float\" or \"double\")\n- string: text\n- name: FName\n- object: UObject reference (needs PinSubCategoryObject)\n- struct: struct reference (needs PinSubCategoryObject)\n- delegate: delegate\nNOTE: There is NO \"float\" category. Use PinCategory=\"real\",PinSubCategory=\"float\" for floats.\n\n## Connection Rules\n- Between NEW nodes in the same write_blueprint call: add LinkedTo=(TargetNodeName TargetPinId) using LINK_* placeholders on both sides — the plugin auto-creates reverse links\n- To connect new nodes to EXISTING nodes: do NOT use LinkedTo — use edit_blueprint connect action after writing\n- Use LINK_* placeholders for PinId, GUID_* for NodeGuid — they get resolved to real GUIDs\n\n## Template: Pure Function Call (e.g. Multiply)\nPure functions have NO exec pins — only data pins. Use for math, getters, comparisons.\n```\nBegin Object Class=/Script/BlueprintGraph.K2Node_CallFunction Name=\"K2Node_Multiply_NEW\"\n   FunctionReference=(MemberParent=Class'/Script/Engine.KismetMathLibrary',MemberName=\"Multiply_DoubleDouble\")\n   NodeGuid=GUID_MULTIPLY\nCustomProperties Pin (PinId=LINK_SELF,PinName=\"self\",PinType.PinCategory=\"object\",PinType.PinSubCategoryObject=Class'/Script/Engine.KismetMathLibrary',DefaultObject=\"/Script/Engine.Default__KismetMathLibrary\",bHidden=True)\nCustomProperties Pin (PinId=LINK_A,PinName=\"A\",PinType.PinCategory=\"real\",PinType.PinSubCategory=\"double\",DefaultValue=\"0.0\")\nCustomProperties Pin (PinId=LINK_B,PinName=\"B\",PinType.PinCategory=\"real\",PinType.PinSubCategory=\"double\",DefaultValue=\"0.0\")\nCustomProperties Pin (PinId=LINK_RET,PinName=\"ReturnValue\",Direction=\"EGPD_Output\",PinType.PinCategory=\"real\",PinType.PinSubCategory=\"double\")\nEnd Object\n```\nIMPORTANT: Math functions use Class'/Script/Engine.KismetMathLibrary' (with Class' prefix), NOT the /Script/CoreUObject.Class'...' format used for impure functions.\n\n## Common Function References\n\nImpure (have exec pins):\n- PrintString: MemberParent=\"/Script/CoreUObject.Class'/Script/Engine.KismetSystemLibrary'\",MemberName=\"PrintString\"\n- GetActorLocation: MemberParent=\"/Script/CoreUObject.Class'/Script/Engine.Actor'\",MemberName=\"K2_GetActorLocation\"\n- SetActorLocation: MemberParent=\"/Script/CoreUObject.Class'/Script/Engine.Actor'\",MemberName=\"K2_SetActorLocation\"\n- DestroyActor: MemberParent=\"/Script/CoreUObject.Class'/Script/Engine.Actor'\",MemberName=\"K2_DestroyActor\"\n- Delay: MemberParent=\"/Script/CoreUObject.Class'/Script/Engine.KismetSystemLibrary'\",MemberName=\"Delay\"\n- IsValid: MemberParent=\"/Script/CoreUObject.Class'/Script/Engine.KismetSystemLibrary'\",MemberName=\"IsValid\"\n- SpawnActor: MemberParent=\"/Script/CoreUObject.Class'/Script/Engine.GameplayStatics'\",MemberName=\"BeginDeferredActorSpawnFromClass\"\n\nString conversions (pure, KismetStringLibrary — use Class' prefix):\n- Double/Float to String: MemberParent=Class'/Script/Engine.KismetStringLibrary',MemberName=\"Conv_DoubleToString\" — input pin \"InDouble\" (PinCategory=\"real\",PinSubCategory=\"double\"), output \"ReturnValue\" (string). There is NO Conv_FloatToString in UE5.\n- Int to String: MemberName=\"Conv_IntToString\" — input \"InInt\" (int), output \"ReturnValue\" (string)\n- Bool to String: MemberName=\"Conv_BoolToString\" — input \"InBool\" (bool), output \"ReturnValue\" (string)\n- Vector to String: MemberName=\"Conv_VectorToString\" — input \"InVec\" (struct Vector), output \"ReturnValue\" (string)\n\nPure math (NO exec pins, use Class' prefix for MemberParent):\n- Multiply: MemberParent=Class'/Script/Engine.KismetMathLibrary',MemberName=\"Multiply_DoubleDouble\" — pins: A, B, ReturnValue (all real/double)\n- Add: MemberParent=Class'/Script/Engine.KismetMathLibrary',MemberName=\"Add_DoubleDouble\"\n- Subtract: MemberParent=Class'/Script/Engine.KismetMathLibrary',MemberName=\"Subtract_DoubleDouble\"\n- Divide: MemberParent=Class'/Script/Engine.KismetMathLibrary',MemberName=\"Divide_DoubleDouble\"\n- Less Than: MemberParent=Class'/Script/Engine.KismetMathLibrary',MemberName=\"Less_DoubleDouble\" — ReturnValue is bool\n- Greater Than: MemberParent=Class'/Script/Engine.KismetMathLibrary',MemberName=\"Greater_DoubleDouble\"\n- Equal: MemberParent=Class'/Script/Engine.KismetMathLibrary',MemberName=\"EqualEqual_DoubleDouble\"\n- Int Add: MemberName=\"Add_IntInt\" — pins: A, B, ReturnValue (all int)\n- Int Multiply: MemberName=\"Multiply_IntInt\"\n- Bool AND: MemberName=\"BooleanAND\" — A, B, ReturnValue (all bool)\n- Bool OR: MemberName=\"BooleanOR\"\n- Bool NOT: MemberName=\"Not_PreBool\" — A (bool), ReturnValue (bool)\n- Clamp: MemberName=\"FClamp\" — Value, Min, Max, ReturnValue (all real/double)\n- Random Float: MemberName=\"RandomFloatInRange\" — Min, Max, ReturnValue (all real/double)\n\nNote: UE5 uses Double internally — \"float\" pins are PinCategory=\"real\",PinSubCategory=\"double\". There is no Multiply_FloatFloat — use Multiply_DoubleDouble.\n\n## Animation graphs\nAnim node T3D uses Class=/Script/AnimGraph.AnimGraphNode_* with the runtime struct serialized inline as Node=(...). Pose pins are PinType.PinCategory=\"struct\" with PinSubCategoryObject pointing at FPoseLink (local space) or FComponentSpacePoseLink (component space). Prefer insert_node for anim nodes (it returns real pose pins). An anim graph also legally hosts PURE data K2 nodes (variable getters, pure functions, struct breaks, knots) — only IMPURE (exec) K2 nodes are rejected by the anim schema. A rejected node (an exec node injected into an anim graph, or any anim pose node injected into a K2 graph) is reported back as a schema-rejection warning with the node name — it is not silently kept.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "expected_revision": {"type": "string", "description": "Copy the latest asset_revision returned for this Blueprint package by a read or completed operation. The token covers the whole asset, including all graphs and the widget Designer, and is checked before mutation. On a revision conflict, reread the asset and replan; never retry the old operation automatically."},
+                "blueprint": {
+                    "type": "string",
+                    "description": "Blueprint asset path, e.g. \"/Game/MyProject/BP_Test\""
+                },
+                "graph": {
+                    "type": "string",
+                    "description": "Graph name. Defaults to \"EventGraph\"."
+                },
+                "t3d": {
+                    "type": "string",
+                    "description": "T3D text to inject. Use LINK_* for PinIds and GUID_* for NodeGuids."
+                },
+                "auto_layout": {
+                    "type": "boolean",
+                    "description": "When true, reformat the connected component(s) the new nodes joined after inserting them (tidies the graph). Overwrites existing node positions in those components, so leave false (default) unless you want the whole region re-laid-out."
+                }
+            },
+            "required": [
+                "blueprint",
+                "t3d"
+            ]
+        }
+    },
+    {
+        "name": "compile_blueprint",
+        "description": "Compile a Blueprint and return structured errors/warnings. Use after modifications to verify correctness.\nAlso returns unreachable_node_warnings: exec node chains that are wired internally but have no exec path from any event or function entry (the compiler is silent about these — they look correct but never execute). Fix by wiring an exec output into the named pin, or delete the dead path.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "expected_revision": {"type": "string", "description": "Copy the latest asset_revision returned for this Blueprint package by a read or completed operation. The token covers the whole asset, including all graphs and the widget Designer, and is checked before mutation. On a revision conflict, reread the asset and replan; never retry the old operation automatically."},
+                "blueprint": {
+                    "type": "string",
+                    "description": "Blueprint asset path, e.g. \"/Game/MyProject/BP_Test\""
+                }
+            },
+            "required": [
+                "blueprint"
+            ]
+        }
+    },
+    {
+        "name": "edit_blueprint",
+        "description": "Edit existing nodes in a Blueprint: connect/disconnect pins, set default values, delete nodes.\nAll operations are batched in one call, executed in order, then compiled. ALWAYS batch related operations in a single call.\n\nActions:\n- \"connect\": Wire source_node.source_pin (output) → target_node.target_pin (input)\n- \"disconnect\": Break link between source_node.source_pin → target_node.target_pin\n- \"set_pin_default\": Set node.pin default value (e.g. change InString text, Duration, etc.). The value is validated against the pin type at edit time: a malformed value (bad struct literal, non-numeric number) fails with INVALID_DEFAULT and the pin keeps its previous value. Vector defaults use comma-separated X,Y,Z values, e.g. \"1.0,0.0,0.0\". Rotators use Pitch,Yaw,Roll, e.g. \"0.0,90.0,0.0\". LinearColor uses \"(R=1.0,G=0.0,B=0.0,A=1.0)\". Other structs use their UE text format; read the actual pin type before setting it\n- \"delete_node\": Remove a node entirely\n\nExample — insert Delay between BeginPlay and PrintString, change text:\n{\"operations\": [\n  {\"action\": \"disconnect\", \"source_node\": \"K2Node_Event_0\", \"source_pin\": \"then\", \"target_node\": \"K2Node_CallFunction_0\", \"target_pin\": \"execute\"},\n  {\"action\": \"connect\", \"source_node\": \"K2Node_Event_0\", \"source_pin\": \"then\", \"target_node\": \"K2Node_Delay_NEW\", \"target_pin\": \"execute\"},\n  {\"action\": \"connect\", \"source_node\": \"K2Node_Delay_NEW\", \"source_pin\": \"then\", \"target_node\": \"K2Node_CallFunction_0\", \"target_pin\": \"execute\"},\n  {\"action\": \"set_pin_default\", \"node\": \"K2Node_CallFunction_0\", \"pin\": \"InString\", \"value\": \"Delayed Hello\"}\n]}\n\nAnim-oriented actions:\n- \"set_node_property\": set a UPROPERTY on a NODE (not a pin), e.g. CacheName on a SaveCachedPose node, or a field inside the runtime struct via a dotted path \"Node.GroupName\" (the struct member is \"Node\" on most anim nodes, \"BlendNode\" on TwoWayBlend). Value is parsed with the property's own text format.\n- \"set_pin_visibility\": expose/hide an anim node's \"property as pin\" (anim nodes only): {\"action\":\"set_pin_visibility\",\"node\":\"...\",\"property\":\"Alpha\",\"visible\":true}. Exposes the pin so you can then wire or set it.\nPose connections use the same connect/disconnect actions — pose inputs are single-link and auto-break on reconnect.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "expected_revision": {"type": "string", "description": "Copy the latest asset_revision returned for this Blueprint package by a read or completed operation. The token covers the whole asset, including all graphs and the widget Designer, and is checked before mutation. On a revision conflict, reread the asset and replan; never retry the old operation automatically."},
+                "blueprint": {
+                    "type": "string",
+                    "description": "Blueprint asset path, e.g. \"/Game/MyProject/BP_Test\""
+                },
+                "graph": {
+                    "type": "string",
+                    "description": "Graph name. Defaults to \"EventGraph\"."
+                },
+                "atomic": {
+                    "type": "boolean",
+                    "description": "If true, revert the WHOLE batch when any operation fails (no half-wired state). The revert is verified against the pre-batch graph: rolled_back=true / outcome.recovery_status=\"restored\" means the graph is exactly as before, so fix and resend. If recovery_status is \"partially_restored\" or \"restore_failed\" (retry_safe=false), part of the batch may remain: re-read the graph, do not resend. Refused with TRANSACTION_ACTIVE (nothing changed) while another editor transaction is open. Default false (best-effort: apply what succeeds)."
+                },
+                "operations": {
+                    "type": "array",
+                    "description": "Array of edit operations to perform in order. BATCH all related edits in one call.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "action": {
+                                "type": "string",
+                                "enum": [
+                                    "connect",
+                                    "disconnect",
+                                    "set_pin_default",
+                                    "set_node_property",
+                                    "set_pin_visibility",
+                                    "delete_node"
+                                ]
+                            },
+                            "source_node": {
+                                "type": "string",
+                                "description": "Source node name (for connect/disconnect)"
+                            },
+                            "source_pin": {
+                                "type": "string",
+                                "description": "Source output pin NAME, e.g. \"then\", \"ReturnValue\""
+                            },
+                            "target_node": {
+                                "type": "string",
+                                "description": "Target node name (for connect/disconnect)"
+                            },
+                            "target_pin": {
+                                "type": "string",
+                                "description": "Target input pin NAME, e.g. \"execute\", \"Condition\""
+                            },
+                            "node": {
+                                "type": "string",
+                                "description": "Node name (for set_pin_default / delete_node)"
+                            },
+                            "pin": {
+                                "type": "string",
+                                "description": "Pin name (for set_pin_default)"
+                            },
+                            "value": {
+                                "type": "string",
+                                "description": "New value. For set_pin_default: pin default. For set_node_property: the property value in UE text format."
+                            },
+                            "property": {
+                                "type": "string",
+                                "description": "Property name for set_node_property / set_pin_visibility. set_node_property accepts a dotted path into the runtime struct, e.g. \"Node.GroupName\"."
+                            },
+                            "visible": {
+                                "type": "boolean",
+                                "description": "For set_pin_visibility: true to expose the property as a pin, false to hide it."
+                            }
+                        },
+                        "required": [
+                            "action"
+                        ]
+                    }
+                }
+            },
+            "required": [
+                "blueprint",
+                "operations"
+            ]
+        }
+    },
+    {
+        "name": "insert_node",
+        "description": "Spawn a Blueprint node by its menu name and get its REAL pins back — the preferred way to add macros, casts, switches, flow-control, and function-call nodes WITHOUT hand-authoring T3D.\n\nUse this instead of write_blueprint for any node whose exact T3D you would otherwise guess: ForEachLoop / ForLoop / WhileLoop / DoOnce / Gate / FlipFlop / Sequence (macros), Branch, Cast nodes, Switch on Int/Enum, MakeArray, delegate add/call, and ordinary function calls. The node is created, compiled, and its actual pin names/types are returned so you can wire it with edit_blueprint.\n\nTo reference a COMPONENT (the editor's drag-a-component-from-the-Components-panel getter), pass \"Get <ComponentName>\" — this works for components inherited from a C++ parent or parent Blueprint too (e.g. a CameraSpringArm declared in C++), even when there is no menu action for them. Use this instead of GetComponentByClass + Cast. The inherited component names are listed in read_blueprint's overview Components section.\n\nWhen the menu name or node class is uncertain, use search_nodes first (discover_tools category \"discovery_tools\") and copy its concrete action name/class. Keyboard input events are named by the key, for example node:\"W\"; configured input actions/axes use their mapping names. A generic event category is not a spawnable action. Preserve existing mappings.\n\nAfter insert_node: wire the new node with edit_blueprint using the returned pin NAMES. Do NOT re-create it with write_blueprint (that would duplicate it).\n\nconnect_from wires an existing node's exec output into the new node. IMPORTANT: an exec output holds only ONE link, so if that pin was already connected its old link is broken (the result message tells you). To INSERT INTO an existing chain (A -> B becomes A -> new -> B), pass splice=true — the old target is re-wired to the new node's 'then' (or first exec output) automatically, no manual disconnect/reconnect needed.\n\nconnect_to is the mirror of connect_from: it wires this NEW node's first compatible OUTPUT into an existing node's input (exec, pose, or data — the schema picks the pair; omit the target pin to auto-pick). PREFER connect_from / connect_to over inserting then running a separate edit_blueprint connect: a node wired at insert time lands next to the node it feeds, instead of stranded across the canvas. (If you do insert unwired then connect later, the node is still pulled next to its peer on that first wire.)\n\nExamples:\n- {\"blueprint\": \"/Game/BP_X\", \"node\": \"ForEachLoop\"}\n- {\"blueprint\": \"/Game/BP_X\", \"node\": \"Branch\", \"connect_from\": {\"node\": \"K2Node_Event_0\", \"pin\": \"then\"}}\n- feed a downstream node: {\"blueprint\": \"/Game/BP_X\", \"node\": \"Get bIsInAir\", \"connect_to\": {\"node\": \"K2Node_CallFunction_4\", \"pin\": \"NewParam\"}}\n- insert between two connected nodes: {\"blueprint\": \"/Game/BP_X\", \"node\": \"Print String\", \"connect_from\": {\"node\": \"K2Node_CallFunction_3\", \"pin\": \"then\", \"splice\": true}}\n- {\"blueprint\": \"/Game/BP_X\", \"node\": \"GetActorLocation\", \"class\": \"Actor\"}\n- {\"blueprint\": \"/Game/BP_X\", \"node\": \"Get CameraSpringArm\"}\n\nANIMATION BLUEPRINTS: in an anim graph (graph addresses like \"AnimGraph\" or a nested state's bound graph), node names are anim nodes — \"Blend\", \"Two Way Blend\", \"Layered blend per bone\", \"State Machine\", \"Slot 'DefaultSlot'\", IK nodes, or \"Play 'AssetName'\" for an asset player (skeleton-checked against the Blueprint's target skeleton). Pins include pose pins reported with pose_space (\"local\" or \"component\"); wire pose output → pose input. connect_from in an anim graph wires the source's POSE output into the new node's first POSE input (not exec); the default source pin is the node's pose output, and pose inputs auto-break any prior link (no splice).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "expected_revision": {"type": "string", "description": "Copy the latest asset_revision returned for this Blueprint package by a read or completed operation. The token covers the whole asset, including all graphs and the widget Designer, and is checked before mutation. On a revision conflict, reread the asset and replan; never retry the old operation automatically."},
+                "blueprint": {
+                    "type": "string",
+                    "description": "Blueprint asset path, e.g. \"/Game/MyProject/BP_Test\""
+                },
+                "graph": {
+                    "type": "string",
+                    "description": "Graph name or path. Defaults to \"EventGraph\" (or the AnimGraph for an Animation Blueprint). Nested anim graphs are addressable by path, e.g. \"AnimGraph/Locomotion/Idle\"."
+                },
+                "node": {
+                    "type": "string",
+                    "description": "The node's menu name as it appears in the Blueprint right-click menu, e.g. \"ForEachLoop\", \"Branch\", \"Print String\", \"Cast to BP_Enemy\", \"Switch on Int\"."
+                },
+                "class": {
+                    "type": "string",
+                    "description": "Optional class filter to disambiguate a function node (e.g. \"KismetMathLibrary\", \"Actor\")."
+                },
+                "node_class": {
+                    "type": "string",
+                    "description": "Optional node-CLASS filter, for when one menu name maps to more than one node type (distinct from \"class\", which filters a function's owning class). Example: an input axis exposes BOTH a value getter (K2Node_GetInputAxisValue) and an event (K2Node_InputAxisEvent) under the same name — pass \"K2Node_InputAxisEvent\" to get the event. The \"K2Node_\" prefix is optional. The response's node_class field reports which type you actually got, so if it is not the one you wanted, retry with this filter."
+                },
+                "connect_from": {
+                    "type": "object",
+                    "description": "Optional: wire an exec output of an EXISTING node into this node's exec input. Connecting an already-linked exec output breaks its old link — set splice=true to re-route that link through the new node instead (insert into the chain).",
+                    "properties": {
+                        "node": {
+                            "type": "string",
+                            "description": "Existing source node name (e.g. \"K2Node_Event_0\")."
+                        },
+                        "pin": {
+                            "type": "string",
+                            "description": "Source output pin name. Defaults to \"then\"."
+                        },
+                        "splice": {
+                            "type": "boolean",
+                            "description": "Insert into the existing chain: the pin's previous target is re-wired to the new node's 'then' (or first exec output). Default false."
+                        }
+                    },
+                    "required": [
+                        "node"
+                    ]
+                },
+                "connect_to": {
+                    "type": "object",
+                    "description": "Optional: wire this NEW node's first compatible OUTPUT pin into an EXISTING node's input. The mirror of connect_from, for the common \"this node feeds a downstream node\" case. Works for exec, pose, and data pins — the schema picks the compatible pair. PREFER passing connect_to (or connect_from) over a separate edit_blueprint connect: a node wired at insert time lands right next to the node it feeds, instead of stranded across the canvas. If the new node ends up unwired (target/pin not found or incompatible) it is still inserted and the result message says so — then wire it with edit_blueprint.",
+                    "properties": {
+                        "node": {
+                            "type": "string",
+                            "description": "Existing target node name (e.g. \"K2Node_CallFunction_2\") whose input pin the new node should feed."
+                        },
+                        "pin": {
+                            "type": "string",
+                            "description": "Target input pin name. Optional — omit to auto-pick the first schema-compatible input on the target."
+                        }
+                    },
+                    "required": [
+                        "node"
+                    ]
+                },
+                "auto_layout": {
+                    "type": "boolean",
+                    "description": "When true, reformat the connected component the new node joined after inserting it (tidies that region). Overwrites existing node positions in the component, so leave false (default) unless a re-layout is wanted."
+                }
+            },
+            "required": [
+                "blueprint",
+                "node"
+            ]
+        }
+    },
+    {
+        "name": "search_assets",
+        "description": "Search the project's Asset Registry for Blueprints, structs, enums, data tables, materials, and other assets.\n\nExamples:\n- Find all Blueprints: {\"class_filter\": \"Blueprint\"}\n- Find in folder: {\"class_filter\": \"Blueprint\", \"path\": \"/Game/Characters\"}\n- Find by name: {\"query\": \"Enemy\"}\n- Find structs: {\"class_filter\": \"UserDefinedStruct\"}\n- Filter by parent: {\"class_filter\": \"Blueprint\", \"parent_class\": \"Character\"}",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search by asset name substring (case-insensitive)"
+                },
+                "class_filter": {
+                    "type": "string",
+                    "description": "Filter by asset class: Blueprint, WidgetBlueprint, AnimBlueprint, UserDefinedStruct, UserDefinedEnum, DataTable, Material, Texture2D, StaticMesh, SkeletalMesh, SoundWave, World, AnimSequence, AnimMontage, AnimComposite, BlendSpace, BlendSpace1D, AimOffsetBlendSpace, AimOffsetBlendSpace1D, Skeleton"
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Content path to search in, e.g. /Game/Characters. Recursive by default."
+                },
+                "parent_class": {
+                    "type": "string",
+                    "description": "For Blueprints: filter by parent class (e.g. Character, Actor, Pawn, ActorComponent)"
+                },
+                "limit": {
+                    "type": "integer",
+                    "default": 50,
+                    "description": "Maximum results (1-200)"
+                }
+            }
+        }
+    },
+    {
+        "name": "read_source",
+        "description": "Read permitted C++ source files with bounded work and explicit partial results. Files over 1 MiB are refused without loading; output is capped at 32 KiB including the result envelope.\n\nModes:\n- \"find\": Search for source files by name pattern. Returns bounded pages of paths and traversal metrics. Pass the returned cursor with identical pattern/scope/limit to continue. Live tree changes may omit or duplicate entries; expired cursors require restarting.\n- \"outline\" (default): Extract UCLASS/UFUNCTION/UPROPERTY declarations with doc comments from a header. Skips function bodies. Use this to understand a class.\n- \"raw\": Raw file content with line-range pagination. Use for .cpp implementation details.\n\nWorkflow:\n1. find to locate files: {\"mode\": \"find\", \"pattern\": \"PGPawn*\"}\n2. outline to understand the class: {\"mode\": \"outline\", \"file\": \"/path/to/PGPawn.h\"}\n3. raw for implementation: {\"mode\": \"raw\", \"file\": \"/path/to/PGPawn.cpp\", \"offset\": 100, \"limit\": 200}\n\nExamples:\n- Find project files: {\"mode\": \"find\", \"pattern\": \"PGPawn*\"}\n- Find engine class: {\"mode\": \"find\", \"pattern\": \"Actor.h\", \"scope\": \"engine\"}\n- Outline a header: {\"mode\": \"outline\", \"file\": \"/full/path/to/PGPawn.h\"}\n- Filter outline: {\"mode\": \"outline\", \"file\": \"/path/to/Actor.h\", \"query\": \"Location\"}\n- Read lines: {\"mode\": \"raw\", \"file\": \"/path/to/PGPawn.cpp\", \"offset\": 0, \"limit\": 200}",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": [
+                        "find",
+                        "outline",
+                        "raw"
+                    ],
+                    "description": "\"find\" to search for files, \"outline\" to extract declarations (default), \"raw\" for full content with line numbers."
+                },
+                "file": {
+                    "type": "string",
+                    "description": "Path to source file (outline/raw modes). Absolute, project-relative (e.g. \"ParkourGame/Public/Player/PGPawn.h\"), or engine-relative (e.g. \"Runtime/Engine/Classes/GameFramework/Actor.h\")."
+                },
+                "pattern": {
+                    "type": "string",
+                    "description": "Basename glob using literals, * and ?. No **, paths, character classes or braces; 1–128 characters. Broad extension globs such as *.h use the same work budgets in every scope."
+                },
+                "scope": {
+                    "type": "string",
+                    "enum": [
+                        "project",
+                        "engine",
+                        "plugins"
+                    ],
+                    "description": "Explicit scope confines discovery and reads to project Source, engine Source, or engine/project Plugins and discovered plugins. Omitted scope admits their union; relative reads still resolve against project."
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Filter outline results by keyword (case-insensitive). E.g. \"Jump\" shows only jump-related declarations."
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": "Start line (0-based) for raw mode pagination. Default: 0."
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max raw lines or outline declarations (default 200, max 500). Find pages contain at most 20 files and may stop earlier at a work/output budget."
+                },
+                "cursor": {
+                    "type": "string",
+                    "description": "Opaque single-use find continuation; repeat identical pattern, scope and limit. Expires after 60 seconds idle."
+                },
+                "request_id": {
+                    "type": "string",
+                    "description": "Optional REST source-job identifier (at most 128 characters), used by /api/v1/read_source/cancel."
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "read_logs",
+        "description": "Read/grep the current editor session's Unreal log (Saved/Logs/<Project>.log) — the real engine output: compile messages, Blueprint runtime errors, asset/load warnings, PIE output, and plugin logs. Use this to see what an action actually produced beyond the compile result (why something failed at runtime, asset-load warnings, or to find a specific Print String / log line).\n\nAll fields optional:\n- level: minimum severity — \"error\", \"warning\" (default), \"display\", \"all\". Use \"all\" with a pattern to find non-warning output (e.g. Print String).\n- pattern: a regular expression matched against each line (e.g. \"BP_Player|failed to load\").\n- category: substring of the log line/category (e.g. \"LogBlueprint\", \"LogCompile\", \"PIE\", \"LogLinker\").\n- lines: max lines to return (default 100, max 500).\n- tail: return the LAST matching lines (default true) or the first.\n\nReturns the matching lines (most recent last), total matched, a truncated flag, and the log path. Scans the last few MB of the log.\n\nExamples:\n- {} — recent warnings + errors\n- {\"level\": \"error\"} — recent errors only\n- {\"pattern\": \"BP_Player\", \"level\": \"all\"} — everything mentioning BP_Player\n- {\"category\": \"LogBlueprintUserMessages\", \"level\": \"all\"} — Print String / user log output",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "level": {
+                    "type": "string",
+                    "enum": [
+                        "error",
+                        "warning",
+                        "display",
+                        "all",
+                        "verbose"
+                    ],
+                    "description": "Minimum severity. Default 'warning'."
+                },
+                "pattern": {
+                    "type": "string",
+                    "description": "Regular expression matched against each log line."
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Substring filter, e.g. LogBlueprint, LogCompile, PIE, LogLinker."
+                },
+                "lines": {
+                    "type": "integer",
+                    "description": "Max lines to return (default 100, max 500)."
+                },
+                "tail": {
+                    "type": "boolean",
+                    "description": "Return the last matching lines (default true) or the first."
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "enter_plan_mode",
+        "description": "Enter Plan first, the read-only planning mode for asset changes. Use when the user explicitly asks to plan first, or when ambiguity would risk substantial rework before the user reviews the approach. After this tool succeeds, you may only use read-only exploration tools until you call exit_plan_mode.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "exit_plan_mode",
+        "description": "Exit planning mode with a final plan for user approval. Call this only after entering plan mode, completing read-only exploration, and writing a concise asset-focused implementation plan. Do not ask for plan approval in plain text; this tool is the approval boundary.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Short human-readable plan title (becomes the card heading and file slug)."
+                },
+                "description": {
+                    "type": "string",
+                    "description": "One- or two-sentence summary of the intended gameplay or editor behavior."
+                },
+                "body": {
+                    "type": "string",
+                    "description": "A concise asset-focused plan in markdown: intended behavior; concrete asset paths and graphs to create or modify; important design choices and existing logic to reuse, preserve, or replace; and verification steps. Distinguish existing assets from proposed new ones. Include node-level detail only when it explains a decision."
+                },
+                "plan": {
+                    "type": "string",
+                    "description": "Deprecated — use `body`. Accepted for backwards compatibility."
+                }
+            },
+            "required": [
+                "title",
+                "body"
+            ]
+        }
+    },
+    {
+        "name": "ask_user",
+        "description": "Ask the user one or more multiple-choice questions and wait for their answer. Use ONLY when a requirement is genuinely ambiguous and choosing wrong would cause real rework — e.g. multiple valid Blueprint approaches, an unclear target asset/graph, or a destructive/irreversible change. First explore with read-only tools; ask only what you cannot determine yourself. Do NOT use this to request permission to do what the user already asked, and do NOT use it as a reflex to avoid simple decisions. The user can always pick 'Other' and type a custom answer. If no user is available the tool returns immediately and you should proceed on your best judgment.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "questions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 4,
+                    "description": "1-4 questions to ask at once.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "question": {
+                                "type": "string",
+                                "description": "The question text, phrased clearly and specifically."
+                            },
+                            "header": {
+                                "type": "string",
+                                "description": "A short label for this question (max ~12 chars), e.g. \"Parent class\"."
+                            },
+                            "options": {
+                                "type": "array",
+                                "minItems": 2,
+                                "maxItems": 4,
+                                "description": "2-4 distinct choices.",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "label": {
+                                            "type": "string",
+                                            "description": "Concise choice text shown to the user."
+                                        },
+                                        "description": {
+                                            "type": "string",
+                                            "description": "Optional one-line explanation of this choice / its trade-off."
+                                        }
+                                    },
+                                    "required": [
+                                        "label"
+                                    ]
+                                }
+                            },
+                            "multiSelect": {
+                                "type": "boolean",
+                                "description": "Set true if the user may pick more than one option. Defaults to false."
+                            }
+                        },
+                        "required": [
+                            "question",
+                            "options"
+                        ]
+                    }
+                }
+            },
+            "required": [
+                "questions"
+            ]
+        }
+    },
+    {
+        "name": "update_todos",
+        "description": "Maintain a visible checklist for GENUINELY multi-step Blueprint work (5+ distinct tool-using steps, e.g. several variables + functions + multiple graphs wired). Call it when you start such a task to lay out the steps, and again after each step to update status — mark a step in_progress BEFORE working on it and completed IMMEDIATELY after, keeping exactly one in_progress at a time. Do NOT call it for short tasks (a few nodes, a single graph edit) — it only adds overhead. The final step of any tracked task should be a verification step (e.g. read_blueprint + compile_blueprint).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "todos": {
+                    "type": "array",
+                    "description": "The full current todo list (send the entire list every time, not a delta).",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "content": {
+                                "type": "string",
+                                "description": "Imperative form of the step, e.g. \"Wire BeginPlay to PrintString\"."
+                            },
+                            "activeForm": {
+                                "type": "string",
+                                "description": "Present-continuous form shown while active, e.g. \"Wiring BeginPlay to PrintString\"."
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "pending",
+                                    "in_progress",
+                                    "completed"
+                                ],
+                                "description": "Current status of this step."
+                            }
+                        },
+                        "required": [
+                            "content",
+                            "status"
+                        ]
+                    }
+                }
+            },
+            "required": [
+                "todos"
+            ]
+        }
+    },
+    {
+        "name": "discover_tools",
+        "description": "Load an extended tool so it becomes available for use. Extended tools are not loaded by default to keep the context efficient.\n\nAvailable extended tools:\n- manage_blueprint: Structural Blueprint operations — add/remove variables, functions, macros, custom events, event dispatchers, interfaces, change parent class\n- manage_components: Actor components — add/remove/reparent components, and set default properties, collision, materials, and post-process materials (blendables) on components from this Blueprint, a parent Blueprint, or a native C++ parent. Prefer this over runtime nodes (e.g. AddOrUpdateBlendable at BeginPlay) when the user wants a component's defaults changed.\n- manage_state_machine: Animation Blueprint state machines — create a state machine in the AnimGraph, add states/conduits/aliases/transitions, set transition properties, set the entry state, rename and delete states/transitions.\n- manage_animation: Edit animation ASSETS (not Blueprints) — montages (slot tracks, segments, sections, sync group), anim sequences + montages (notifies), blend spaces (axes, samples). Also reads their structure via the 'get' action. Create the assets first with create_asset (AnimMontage/AnimSequence/BlendSpace/…).\n\nCategories (load several related tools at once):\n- blueprint_tools: manage_blueprint + manage_components + manage_state_machine + layout_graph\n- project_tools: get_references + create_asset + manage_asset + manage_animation\n- discovery_tools: search_nodes + inspect_class\n- material_tools: read_material + create_material_expression + edit_material + compile_material + create_material_instance + set_material_instance_parameter + manage_material\n- widget_tools: read_widget + edit_widget (UMG Widget Blueprint Designer hierarchy — the widget tree and slot layout)\n\nCall this BEFORE using any of these tools. The tool becomes available on your next response.\n\nWorkflow:\n1. read_blueprint(mode=\"overview\") to see current Blueprint structure\n2. discover_tools(\"manage_blueprint\") to load structural operations\n3. manage_blueprint(...) to make structural changes\n4. write_blueprint(graph=\"NewFunction\") to populate new function graphs",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "tool_name": {
+                    "type": "string",
+                    "enum": [
+                        "manage_blueprint",
+                        "manage_components",
+                        "manage_state_machine",
+                        "layout_graph",
+                        "get_references",
+                        "create_asset",
+                        "manage_asset",
+                        "manage_animation",
+                        "search_nodes",
+                        "inspect_class",
+                        "read_material",
+                        "create_material_expression",
+                        "edit_material",
+                        "compile_material",
+                        "create_material_instance",
+                        "set_material_instance_parameter",
+                        "manage_material",
+                        "read_widget",
+                        "edit_widget",
+                        "blueprint_tools",
+                        "project_tools",
+                        "discovery_tools",
+                        "material_tools",
+                        "widget_tools"
+                    ],
+                    "description": "Name of the extended tool to load, or a category that loads several at once (blueprint_tools, project_tools, discovery_tools, material_tools, widget_tools)"
+                }
+            },
+            "required": [
+                "tool_name"
+            ]
+        }
+    }
+]

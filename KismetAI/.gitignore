@@ -1,0 +1,21 @@
+Binaries/
+Intermediate/
+.mcp.json
+.DS_Store
+__pycache__/
+.worktrees/
+
+# Working notes kept beside the source; not part of the published tree
+Docs/
+
+# Per-developer embed-config marker (managed by Scripts/set-embed.sh)
+.embed-config
+
+# Static portability header index
+.cache/
+
+# Local UI test; not part of the published tree
+/Tests/
+
+# Sample skill manifests; held back until the Skills UI ships
+/Examples/

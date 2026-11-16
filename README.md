@@ -4,28 +4,58 @@
 
 # Kismet
 
-AI Blueprint authoring for Unreal Engine.
+An open-source AI agent for Unreal Engine. Kismet runs inside the editor and
+edits Blueprints, Animation Blueprints, Materials and UMG widgets, then checks
+its work with the compiler.
 
-Kismet is an Unreal Engine 5 editor plugin that lets you describe Blueprint logic in natural language and have it built, wired, and compiled in your graph. This repository is the public portal for **release downloads** and **installation docs** — the source code is not published.
+- Runs on your own model provider (Anthropic, OpenAI, Google, DeepSeek, Z.ai,
+  Moonshot, MiniMax, OpenRouter, or local models through Ollama and LM Studio).
+- No Kismet account is required.
+- Includes a local MCP server, so external clients can use the same tools.
+- Unreal Engine 5.6, 5.7, 5.8 and 5.9 on macOS (Apple Silicon) and Windows.
 
-- Website: <https://kismetai.io>
-- Documentation: <https://kismetai.io/docs>
-- Support: <https://kismetai.io/support>
-
-## Download
-
-Get the latest build from the [**Releases**](https://github.com/a-tarasoff/Kismet/releases) page.
-
-Each release archive contains the compiled plugin for a specific Unreal Engine version and platform.
+Website: <https://kismetai.io> · Docs: <https://kismetai.io/docs> · Discord: <https://discord.gg/tMaJbWHSEs>
 
 ## Install
 
-See [INSTALL.md](INSTALL.md) for full instructions, including API key setup and engine compatibility notes.
+Get a build for your engine version and platform from
+<https://kismetai.io/download> or from [Releases](../../releases), and follow
+[KismetAI/INSTALL.md](KismetAI/INSTALL.md).
+
+Each release comes as ready-to-run binaries, and as the same build with full
+source. Use the source variant if you compiled the engine yourself or package a
+game with the plugin enabled.
+
+## Build from source
+
+The plugin is the [`KismetAI/`](KismetAI) folder. Copy or link it to
+`<YourProject>/Plugins/KismetAI`, then build your project's Editor target:
+
+```sh
+git clone https://github.com/kismetai-io/Kismet.git
+ln -s "$PWD/Kismet/KismetAI" /path/to/YourProject/Plugins/KismetAI
+```
+
+On Windows, copy the folder or use `mklink /D`. Build commands for each platform
+are in [KismetAI/INSTALL.md](KismetAI/INSTALL.md).
+
+## Repository layout
+
+| Path | What it is |
+| --- | --- |
+| [`KismetAI/`](KismetAI) | The plugin: source, configuration and packaging script |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Coding rules, building and running the tests |
+| [`MAINTAINING.md`](MAINTAINING.md) | Supported versions, merge checks and cutting a release |
+| [`SECURITY.md`](SECURITY.md) | How to report a vulnerability |
 
 ## License
 
-The contents of this repository are covered by [LICENSE](LICENSE).
+The plugin is licensed under the [Apache License 2.0](LICENSE), from version
+0.10.0. Third-party notices are in [KismetAI/NOTICE.md](KismetAI/NOTICE.md).
 
-The Kismet plugin binaries distributed via Releases are subject to a separate End User License Agreement included in each release archive.
+Releases tagged `v0.9.1` and earlier predate the open-source release. They are
+binaries only and remain under the license included in each archive.
 
-For licensing inquiries: <legal@kismetai.io>
+Unreal Engine is licensed separately by Epic Games. Kismet is independent and
+is not sponsored or endorsed by Epic Games. The Kismet name and logo are not
+licensed as trademarks by the Apache license.

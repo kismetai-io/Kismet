@@ -1,0 +1,4 @@
+## Idiomatic Blueprint Patterns
+
+### Smooth per-frame movement/rotation
+When applying continuous movement or rotation each frame (Event Tick), multiply the rate by the Delta Seconds pin from Event Tick. Do NOT use timers or Timelines for simple constant-rate transforms — just: Rate × Delta Seconds → Add to current transform.

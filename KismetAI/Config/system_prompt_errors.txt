@@ -1,0 +1,147 @@
+## Common Error Patterns and Fixes
+
+### "Pin not found" after write_blueprint
+The node was imported but pin names differ from what you expected.
+Fix: read_blueprint(mode="t3d", nodes=["NodeName"]) to see exact pin names, then retry edit_blueprint.
+
+### "Node not found" after edit_blueprint
+Node names can change after import — UE may append _1, _2 etc. to avoid duplicates.
+Fix: read_blueprint(mode="describe") to see current names, then use the correct name.
+
+### Duplicate nodes after re-importing
+You called write_blueprint for a node that already exists.
+Fix: Use edit_blueprint to modify existing nodes. Only write_blueprint for NEW nodes.
+
+### Compilation error: "Unconnected exec pin"
+An impure node has an exec input that isn't wired to anything.
+Fix: Trace the execution chain in describe output. Connect the missing exec wire.
+
+### Compilation error: "Type mismatch"
+A data wire connects incompatible types (e.g. int to string).
+Fix: Often you don't need a manual conversion — just edit_blueprint connect the two data pins directly. When a built-in conversion exists (int/float/bool/vector → string, etc.), the connect auto-inserts the conversion node for you. Only add an explicit conversion (e.g. Conv_DoubleToString) if the direct connect is rejected.
+
+### "LinkedTo target not found" during write_blueprint
+You referenced an existing node in LinkedTo — this only works between NEW nodes in the same write call.
+Fix: Remove LinkedTo from T3D. Use edit_blueprint to connect new nodes to existing ones after import.
+
+### "VARIABLE_ALREADY_EXISTS" from manage_blueprint
+A variable with that name already exists.
+Fix: Use set_variable_property to modify it, or choose a different name.
+
+### "FUNCTION_ALREADY_EXISTS" from manage_blueprint
+A function graph with that name already exists.
+Fix: Populate the existing graph with write_blueprint, or remove_function first.
+
+### "NO_SCS" from manage_components
+Blueprint has no SimpleConstructionScript.
+Fix: Only Actor-based Blueprints (parent derives from AActor) have components.
+
+### "COMPONENT_NOT_FOUND" from manage_components
+No component with that name in the SCS.
+Fix: Use read_blueprint(mode="overview") to see component names.
+
+### "COMPONENT_CLASS_NOT_FOUND" from manage_components
+Component class not found.
+Fix: Use short name without "U" prefix (e.g. "StaticMeshComponent"). Check spelling.
+
+### "PROPERTY_NOT_FOUND" from manage_components set_component_property
+Property doesn't exist on the component class.
+Fix: Use C++ property name (RelativeLocation, bVisible, StaticMesh).
+
+### "INVALID_TYPE" from manage_blueprint
+Type string couldn't be parsed.
+Fix: Use "bool", "float", "object:ClassName", "struct:/Script/Module.StructName".
+
+### "INTERFACE_ALREADY_IMPLEMENTED" from manage_blueprint
+Blueprint already implements this interface.
+Fix: Check read_blueprint(mode="overview") Interfaces section.
+
+## search_assets Error Recovery
+
+### No results from search_assets
+Fix: Broaden the search — remove the path filter, try a shorter query substring, or drop the class_filter.
+If the user gave a specific asset path and it returned nothing, tell them the asset doesn't exist. Do NOT invent asset paths.
+
+### Truncated results from search_assets
+Fix: If the returned results contain useful matches, process them. If you need more, narrow with class_filter or path.
+
+## search_nodes Error Recovery
+
+### No results from search_nodes
+Fix: Try ONE alternative keyword (e.g. "line trace" vs "trace" vs "raycast", "print" vs "log"), optionally without the class filter.
+EXIT after 2 empty searches: search_nodes does not cover macros, conversions, or special nodes, so an empty result is often expected. Stop searching and either author the node from the pin knowledge in the system prompt, or ask_user. Do NOT guess node names from training data, and do NOT keep re-searching.
+
+### write_blueprint fails after search_nodes
+Fix: Re-search with include_pins: true to get exact pin signatures. Verify function_reference member_parent and member_name are correct.
+
+## inspect_class Error Recovery
+
+### "CLASS_NOT_FOUND" from inspect_class
+Fix: Try the full path format (/Script/Engine.ClassName). For Blueprint classes, use the asset path (/Game/BP_MyClass).
+Use search_assets to find the asset first, then inspect its class.
+
+### Truncated results from inspect_class
+Fix: Use query to filter by member name, or category to narrow by UPROPERTY/UFUNCTION category.
+If the full list is genuinely needed, make multiple calls with different query filters.
+
+## create_asset Error Recovery
+
+### "ASSET_ALREADY_EXISTS" from create_asset
+An asset already exists at that path. Do NOT overwrite.
+Fix: Ask the user whether to use a different name or path. Suggest a concrete alternative.
+
+### "PARENT_CLASS_NOT_FOUND" from create_asset
+Fix: Use inspect_class to verify the class exists. Use search_assets to find Blueprint classes.
+Common mistake: using Blueprint asset name instead of the generated class name.
+
+### Invalid struct field type from create_asset
+Fix: Use inspect_class to discover the correct type format. Remember: "object:ClassName", "struct:Vector", "enum:/Script/Engine.EBlendMode".
+
+## manage_asset Error Recovery
+
+### "HAS_REFERENCERS" from manage_asset delete
+Delete is blocked because other assets reference this one.
+Fix: Report the full list of referencers to the user. Do NOT attempt to update referencers automatically. Suggest get_references for the complete picture.
+
+### Rename collision from manage_asset
+Fix: Suggest an alternative name. Use search_assets to check what exists at the target path.
+
+### "SAVE_FAILED" from manage_asset save
+Fix: Inform the user — likely a source control or read-only issue. Do NOT retry or force-save.
+
+## Mutation outcome (data.outcome on every editing tool)
+Editing tools return `success: true` when the change was applied, and `data.outcome` says what else happened:
+- `save_status: "failed"` — the change IS in the editor but NOT on disk (`save_error` says why). Do not repeat the edit. Tell the user which asset is unsaved and why; it is lost if the editor closes without a successful save.
+- `compile_status: "failed"` — the edit applied but the Blueprint does not compile. Fix the errors before you finish; if you cannot, say so. Under the autosave policy this broken state may already be saved to disk.
+- `save_included_preexisting_changes: true` — the user had unsaved edits in that asset; the autosave wrote them too. Mention it.
+- `save_status: "not_requested"` — nothing was written (`save_skip_reason`: eval_mode, no_file_backing, not_autosaved, ...).
+Never tell the user a change was saved unless `save_status` was "saved".
+
+## Atomic batches (edit_blueprint / edit_material with atomic:true)
+When an operation in an atomic batch fails, the batch is reverted and the revert is checked against the pre-batch asset. `data.outcome.recovery_status` says how that went:
+- `restored` (`rolled_back: true`, `retry_safe: true`) — the asset is exactly as it was. Fix the failing operations and resend the whole batch.
+- `partially_restored` or `restore_failed` (`retry_safe: false`) — part of the batch may still be applied (`restore_differences` lists what differs). Do NOT resend the batch. Re-read the asset, apply only what is still missing, and tell the user the asset needs review. `restore_failed` with `undo_entry_kept: true` means the user can undo the batch with Ctrl+Z.
+
+### "TRANSACTION_ACTIVE" from edit_blueprint / edit_material
+Another editor transaction (a drag, another edit) was open, so an atomic batch could not get its own undo record. Nothing was changed. Retry once, or send the batch with atomic:false.
+
+## get_references Error Recovery
+
+### "ASSET_NOT_FOUND" from get_references
+Fix: Use search_assets to find the correct asset path first.
+
+### Recursive traversal too large from get_references
+Fix: Suggest non-recursive mode for a manageable view, or use the results you have.
+
+## Cross-Tool Recovery Patterns
+
+### Any tool: "Blueprint not found" / "Asset not found"
+Fix: Use search_assets to find the correct asset path. The user may have given an approximate name.
+
+### write_blueprint: Compile error on placed node
+Fix: Use search_nodes to find the correct node name, function reference, and pin signatures.
+Do NOT guess alternative node names — search for them.
+
+### "nodes_rejected" from write_blueprint
+One or more T3D node blocks were silently rejected (bad FunctionReference, unknown node class, or an incomplete macro/struct reference) and did NOT land in the graph. Do NOT proceed as if they exist.
+Fix: Re-read the affected node's correct form. For function calls, verify MemberParent/MemberName with search_nodes. A common cause is a wrong member name — note UE5 has NO Conv_FloatToString: the float/double→string node is Conv_DoubleToString on KismetStringLibrary (input pin "InDouble", output "ReturnValue", PinCategory="real",PinSubCategory="double"). After fixing, re-write_blueprint and verify with read_blueprint(mode="describe").

@@ -1,0 +1,137 @@
+[
+    {
+        "name": "get_references",
+        "description": "Get what an asset depends on (dependencies) or what references it (referencers). Check before making breaking changes.\n\nExamples:\n- What references BP_Weapon: {\"asset_path\": \"/Game/BP_Weapon\", \"direction\": \"referencers\"}\n- What does BP_Player use: {\"asset_path\": \"/Game/BP_Player\", \"direction\": \"dependencies\"}\n- Full dependency tree: {\"asset_path\": \"/Game/BP_Player\", \"direction\": \"dependencies\", \"recursive\": true}\n- Both directions: {\"asset_path\": \"/Game/BP_Player\", \"direction\": \"both\"}",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "asset_path": {
+                    "type": "string",
+                    "description": "Asset path (e.g. /Game/Blueprints/BP_Player)"
+                },
+                "direction": {
+                    "type": "string",
+                    "enum": ["dependencies", "referencers", "both"],
+                    "default": "referencers",
+                    "description": "'dependencies' = what this asset uses. 'referencers' = what uses this asset."
+                },
+                "recursive": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Walk the full chain (BFS, max depth 10)"
+                },
+                "filter_engine": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Exclude engine/plugin content (only /Game/ assets)"
+                },
+                "limit": {
+                    "type": "integer",
+                    "default": 50,
+                    "description": "Maximum results (1-200)"
+                }
+            },
+            "required": ["asset_path"]
+        }
+    },
+    {
+        "name": "create_asset",
+        "description": "Create a new Blueprint, Widget Blueprint, User Defined Struct/Enum, Material, or animation asset (Animation Blueprint, Montage, Composite, Blend Space, Aim Offset, Anim Sequence).\n\n## Blueprint\n{\"asset_type\": \"Blueprint\", \"name\": \"BP_Enemy\", \"path\": \"/Game/Characters\", \"parent_class\": \"Character\"}\nBlueprint types: normal (default), interface, function_library, macro_library\n\n## Widget Blueprint (UMG)\n{\"asset_type\": \"WidgetBlueprint\", \"name\": \"WBP_MainMenu\", \"path\": \"/Game/UI\"}\nparent_class defaults to UserWidget (must be a UserWidget subclass). root_widget seeds the Designer root panel (default CanvasPanel; any panel class like VerticalBox/Overlay; \"none\" for an empty tree). Author the tree afterwards with edit_widget (discover_tools \"widget_tools\") and the event graph with the standard graph tools.\n\n## Struct\n{\"asset_type\": \"UserDefinedStruct\", \"name\": \"S_ItemData\", \"path\": \"/Game/Data\", \"fields\": [{\"name\": \"DisplayName\", \"type\": \"string\"}, {\"name\": \"Value\", \"type\": \"int\"}]}\n\n## Enum\n{\"asset_type\": \"UserDefinedEnum\", \"name\": \"E_ItemRarity\", \"path\": \"/Game/Data\", \"entries\": [\"Common\", \"Uncommon\", \"Rare\", \"Epic\", \"Legendary\"]}\n\n## Material\n{\"asset_type\": \"Material\", \"name\": \"M_Glow\", \"path\": \"/Game/Materials\"} creates an empty base material — then author its graph with the material tools. Use \"MaterialFunction\" for a reusable material function.\n\n## Animation assets — all need 'skeleton' (path to a USkeleton) except AnimBlueprint with template:true.\n- AnimBlueprint: {\"asset_type\":\"AnimBlueprint\",\"name\":\"ABP_Hero\",\"path\":\"/Game/Anim\",\"skeleton\":\"/Game/Anim/SK_Hero_Skeleton\"} — parent_class optional (a UAnimInstance subclass, default AnimInstance); template:true makes a skeleton-agnostic template. Author its AnimGraph with the graph tools + manage_state_machine.\n- AnimMontage / AnimComposite: {\"asset_type\":\"AnimMontage\",\"name\":\"AM_Attack\",\"path\":\"/Game/Anim\",\"skeleton\":\"…\",\"source_animation\":\"/Game/Anim/A_Attack\"} — source_animation (a UAnimSequence) is optional and seeds slot 0. Edit with manage_animation.\n- BlendSpace / BlendSpace1D / AimOffsetBlendSpace / AimOffsetBlendSpace1D: {\"asset_type\":\"BlendSpace\",\"name\":\"BS_Locomotion\",\"path\":\"/Game/Anim\",\"skeleton\":\"…\"} — configure axes + add samples with manage_animation.\n- AnimSequence: {\"asset_type\":\"AnimSequence\",\"name\":\"A_Empty\",\"path\":\"/Game/Anim\",\"skeleton\":\"…\"} — empty 1-frame sequence (a target for notifies).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "asset_type": {
+                    "type": "string",
+                    "enum": ["Blueprint", "WidgetBlueprint", "UserDefinedStruct", "UserDefinedEnum", "Material", "MaterialFunction", "AnimBlueprint", "AnimMontage", "AnimComposite", "BlendSpace", "BlendSpace1D", "AimOffsetBlendSpace", "AimOffsetBlendSpace1D", "AnimSequence"],
+                    "description": "Type of asset to create."
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Asset name — no spaces, no special chars (e.g. BP_Enemy, S_ItemData, E_Rarity)"
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Content folder (e.g. /Game/Blueprints)"
+                },
+                "parent_class": {
+                    "type": "string",
+                    "description": "Blueprint: Actor, Character, Pawn, ActorComponent, PlayerController, GameModeBase, etc. WidgetBlueprint: a UserWidget subclass (default UserWidget). AnimBlueprint: a UAnimInstance subclass (default AnimInstance)."
+                },
+                "root_widget": {
+                    "type": "string",
+                    "description": "WidgetBlueprint only: panel class for the Designer root (default CanvasPanel), or \"none\" for an empty tree."
+                },
+                "blueprint_type": {
+                    "type": "string",
+                    "enum": ["normal", "interface", "function_library", "macro_library"],
+                    "default": "normal",
+                    "description": "Blueprint only: type of Blueprint to create"
+                },
+                "fields": {
+                    "type": "array",
+                    "description": "Struct only: fields to create",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": { "type": "string" },
+                            "type": { "type": "string", "description": "Pin type: bool, int, float, string, object:ClassName, struct:Vector, enum:/Script/Engine.EBlendMode" },
+                            "default_value": { "type": "string" }
+                        },
+                        "required": ["name", "type"]
+                    }
+                },
+                "entries": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Enum only: display names for entries, in order"
+                },
+                "is_bitflags": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enum only: treat as bitflags"
+                },
+                "skeleton": {
+                    "type": "string",
+                    "description": "Animation assets: path to the target USkeleton (e.g. /Game/Anim/SK_Hero_Skeleton). Required for all anim asset types except AnimBlueprint with template:true."
+                },
+                "source_animation": {
+                    "type": "string",
+                    "description": "AnimMontage/AnimComposite only: optional path to a UAnimSequence to seed the first slot segment."
+                },
+                "template": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "AnimBlueprint only: create a skeleton-agnostic template Anim Blueprint (skeleton becomes optional)."
+                }
+            },
+            "required": ["asset_type", "name", "path"]
+        }
+    },
+    {
+        "name": "manage_asset",
+        "description": "Lifecycle operations on existing assets.\n\nActions:\n- \"duplicate\": Copy asset. Requires new_name. Optional new_path (defaults to same folder).\n- \"rename\": Rename asset in place. Requires new_name. Leaves a redirector.\n- \"move\": Move asset to new folder. Requires new_path. Optional new_name.\n- \"delete\": Delete asset. Checks for referencers first — refuses if any exist.\n- \"save\": Save asset to disk.\n\nExamples:\n- {\"action\": \"duplicate\", \"asset_path\": \"/Game/BP_Enemy\", \"new_name\": \"BP_EnemyRanged\"}\n- {\"action\": \"rename\", \"asset_path\": \"/Game/BP_Old\", \"new_name\": \"BP_New\"}\n- {\"action\": \"move\", \"asset_path\": \"/Game/BP_Temp\", \"new_path\": \"/Game/Characters\"}\n- {\"action\": \"delete\", \"asset_path\": \"/Game/BP_Unused\"}\n- {\"action\": \"save\", \"asset_path\": \"/Game/BP_Modified\"}",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["duplicate", "rename", "move", "delete", "save"],
+                    "description": "Lifecycle action to perform"
+                },
+                "asset_path": {
+                    "type": "string",
+                    "description": "Asset path (e.g. /Game/Blueprints/BP_Player)"
+                },
+                "new_name": {
+                    "type": "string",
+                    "description": "For duplicate/rename/move: new asset name"
+                },
+                "new_path": {
+                    "type": "string",
+                    "description": "For duplicate/move: destination folder (e.g. /Game/Characters)"
+                }
+            },
+            "required": ["action", "asset_path"]
+        }
+    }
+]

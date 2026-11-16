@@ -1,0 +1,134 @@
+{
+	"schema_version": 1,
+	"_comment": "Provider profiles: where a request goes and how it authenticates. A model's 'provider' in models.json names one of these; a run can also pick a profile explicitly. 'key_slot' names the encrypted key file (~/.kismet/<slot>_key.enc) and the in-memory key; the anthropic/openai/minimax slots are the same files KismetAI has always used. Base URLs: a user override in settings wins, then 'base_url_env', then 'base_url'. Endpoints checked 2026-11-06 against each vendor's docs.",
+	"providers": [
+		{
+			"id": "anthropic",
+			"display_name": "Anthropic",
+			"protocol": "anthropic_messages",
+			"base_url": "https://api.anthropic.com",
+			"key_slot": "anthropic",
+			"key_env": "ANTHROPIC_API_KEY",
+			"auth": "x-api-key",
+			"prompt_cache_markers": true,
+			"key_url": "https://platform.claude.com/settings/keys"
+		},
+		{
+			"id": "openai",
+			"display_name": "OpenAI",
+			"protocol": "openai_responses",
+			"base_url": "https://api.openai.com",
+			"base_url_env": "OPENAI_BASE_URL",
+			"key_slot": "openai",
+			"key_env": "OPENAI_API_KEY",
+			"auth": "bearer",
+			"key_url": "https://platform.openai.com/api-keys"
+		},
+		{
+			"id": "google",
+			"display_name": "Google Gemini",
+			"protocol": "openai_chat",
+			"base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+			"key_slot": "google",
+			"key_env": "GEMINI_API_KEY",
+			"auth": "bearer",
+			"key_url": "https://aistudio.google.com/apikey"
+		},
+		{
+			"id": "deepseek",
+			"display_name": "DeepSeek",
+			"protocol": "anthropic_messages",
+			"base_url": "https://api.deepseek.com/anthropic",
+			"key_slot": "deepseek",
+			"key_env": "DEEPSEEK_API_KEY",
+			"auth": "x-api-key+bearer",
+			"key_url": "https://platform.deepseek.com/api_keys"
+		},
+		{
+			"id": "zai",
+			"display_name": "Z.ai (GLM)",
+			"protocol": "anthropic_messages",
+			"base_url": "https://api.z.ai/api/anthropic",
+			"key_slot": "zai",
+			"key_env": "ZAI_API_KEY",
+			"auth": "x-api-key+bearer",
+			"key_url": "https://z.ai/manage-apikey/apikey-list"
+		},
+		{
+			"id": "moonshot",
+			"display_name": "Moonshot (Kimi)",
+			"protocol": "anthropic_messages",
+			"base_url": "https://api.moonshot.ai/anthropic",
+			"key_slot": "moonshot",
+			"key_env": "MOONSHOT_API_KEY",
+			"auth": "x-api-key+bearer",
+			"key_url": "https://platform.kimi.ai/console/api-keys"
+		},
+		{
+			"id": "minimax",
+			"display_name": "MiniMax",
+			"protocol": "anthropic_messages",
+			"base_url": "https://api.minimax.io/anthropic",
+			"base_url_env": "MINIMAX_BASE_URL",
+			"key_slot": "minimax",
+			"key_env": "MINIMAX_API_KEY",
+			"auth": "bearer",
+			"system_as_string": true,
+			"key_url": "https://platform.minimax.io/user-center/basic-information/interface-key"
+		},
+		{
+			"id": "openrouter",
+			"display_name": "OpenRouter",
+			"protocol": "openai_chat",
+			"base_url": "https://openrouter.ai/api/v1",
+			"key_slot": "openrouter",
+			"key_env": "OPENROUTER_API_KEY",
+			"auth": "bearer",
+			"custom_models": true,
+			"extra_headers": { "X-Title": "KismetAI" },
+			"key_url": "https://openrouter.ai/settings/keys"
+		},
+		{
+			"id": "ollama",
+			"display_name": "Ollama (local)",
+			"protocol": "anthropic_messages",
+			"base_url": "http://localhost:11434",
+			"base_url_env": "OLLAMA_BASE_URL",
+			"key_slot": "",
+			"auth": "none",
+			"local": true,
+			"custom_models": true,
+			"system_as_string": true
+		},
+		{
+			"id": "lmstudio",
+			"display_name": "LM Studio (local)",
+			"protocol": "anthropic_messages",
+			"base_url": "http://localhost:1234",
+			"base_url_env": "LMSTUDIO_BASE_URL",
+			"key_slot": "",
+			"auth": "none",
+			"local": true,
+			"custom_models": true,
+			"system_as_string": true
+		},
+		{
+			"id": "custom-anthropic",
+			"display_name": "Custom (Anthropic-compatible)",
+			"protocol": "anthropic_messages",
+			"base_url": "",
+			"key_slot": "custom-anthropic",
+			"auth": "x-api-key",
+			"custom_models": true
+		},
+		{
+			"id": "custom-openai",
+			"display_name": "Custom (OpenAI-compatible)",
+			"protocol": "openai_chat",
+			"base_url": "",
+			"key_slot": "custom-openai",
+			"auth": "bearer",
+			"custom_models": true
+		}
+	]
+}

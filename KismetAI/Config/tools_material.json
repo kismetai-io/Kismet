@@ -1,0 +1,133 @@
+[
+  {
+    "name": "read_material",
+    "description": "Inspect a Material, Material Instance, or Material Function. Materials are data-flow graphs (no execution pins): expression nodes feed their outputs into other nodes' inputs and ultimately into the material's root property inputs (BaseColor, Metallic, Roughness, Normal, EmissiveColor, Opacity, etc.).\n\nModes:\n- describe (default): full node graph — every expression node (id, class, title, position, parameter name), each node's inputs and which upstream node/output feeds them, plus the root property connections. Works on base Materials and Material Functions (not Instances). A MaterialFunctionCall node is opaque in the parent graph but carries a \"function\" field with the called function's asset path — call read_material on that path to descend into MF_* internals. Function describes also list function_inputs/function_outputs (the call node's pins).\n- overview: settings + parameter inventory — material domain, blend mode, shading model, two-sided, Substrate flag, and the scalar/vector/texture/static-switch parameters WITH their current values. Each parameter is {name, value} on base Materials; on Material Instances each is {name, value, overridden, parent_value} so you can see exactly which overrides are set and what they inherit. Vector values are [r,g,b,a]; texture values are asset paths. Works for base Materials, Material Instances (which also report their parent and have no graph), and Material Functions (interface + expression count only). Use this to verify set_material_instance_parameter results.\n\nNode ids are the expression object names (e.g. \"MaterialExpressionMultiply_0\"); reference them when editing.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "material": {
+          "type": "string",
+          "description": "Asset path of the Material, Material Instance, or Material Function (e.g. \"/Game/Materials/M_Rock\" or \"/Game/Materials/Functions/MF_Outline\")."
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["describe", "overview"],
+          "description": "describe = node graph (base Materials and Material Functions); overview = settings + parameters (Materials, Instances, Functions). Defaults to describe."
+        }
+      },
+      "required": ["material"]
+    }
+  },
+  {
+    "name": "create_material_expression",
+    "description": "Add one expression node to a base Material's graph and return its id + real pins. Drives UMaterialEditingLibrary::CreateMaterialExpression.\n\nThe 'node' is a friendly expression type name — the leading \"MaterialExpression\" prefix is optional and matching is case-insensitive (e.g. \"Multiply\", \"Add\", \"LinearInterpolate\"/\"Lerp\", \"TextureSample\", \"ScalarParameter\", \"VectorParameter\", \"Constant3Vector\", \"Fresnel\", \"Panner\", \"TextureCoordinate\", \"ComponentMask\", \"AppendVector\"). For parameter expressions, pass parameter_name to name the parameter.\n\nReturns the new node's id (use it in edit_material), inputs, and outputs. Creating a node does not connect it — follow with edit_material to set property values and wire it, then compile_material to verify. Prefer adding parameters (Scalar/Vector/Texture) so variants can be made as Material Instances rather than new base materials.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "material": { "type": "string", "description": "Asset path of the base Material." },
+        "node": { "type": "string", "description": "Expression type name, e.g. \"Multiply\", \"TextureSample\", \"ScalarParameter\"." },
+        "pos_x": { "type": "integer", "description": "Graph X position (optional; negative is left/upstream)." },
+        "pos_y": { "type": "integer", "description": "Graph Y position (optional)." },
+        "parameter_name": { "type": "string", "description": "For parameter expressions: the parameter's name (optional)." }
+      },
+      "required": ["material", "node"]
+    }
+  },
+  {
+    "name": "edit_material",
+    "description": "Batch-edit a base Material's graph, then recompile to verify. Reference nodes by the ids returned from read_material/create_material_expression.\n\nOperations (array, applied in order):\n- {\"action\":\"set_property\",\"node\":\"<id>\",\"property\":\"<UProperty>\",\"value\":<v>} — set a node property. Examples: Constant.R (number), Constant3Vector.Constant ([r,g,b] or [r,g,b,a]), ScalarParameter.DefaultValue (number), VectorParameter.DefaultValue ([r,g,b,a]), Parameter.ParameterName (string), TextureSample.Texture (asset path), StaticSwitchParameter.DefaultValue (bool).\n- {\"action\":\"connect\",\"from_node\":\"<id>\",\"from_output\":\"\",\"to_node\":\"<id>\",\"to_input\":\"A\"} — wire one expression output into another's input. from_output \"\" = first output; to_input is the pin name (e.g. \"A\", \"B\", \"UVs\", \"Alpha\").\n- {\"action\":\"connect\",\"from_node\":\"<id>\",\"from_output\":\"\",\"to_property\":\"BaseColor\"} — wire an output into a material root property (BaseColor, Metallic, Roughness, Normal, EmissiveColor, Opacity, OpacityMask, AmbientOcclusion, WorldPositionOffset, ...).\n- {\"action\":\"disconnect\",\"to_node\":\"<id>\",\"to_input\":\"A\"} or {\"action\":\"disconnect\",\"to_property\":\"BaseColor\"} — clear an input.\n- {\"action\":\"delete_node\",\"node\":\"<id>\"}.\n\nFor domain=\"UI\", the editor label \"Final Color\" maps to the API root property \"EmissiveColor\". Use to_property:\"EmissiveColor\" for UI color; display labels are not API property identifiers.\n\nMind value types: float vs float3. A connection that fails returns success:false with a reason — fix pin names/types. Set atomic:true to revert all operations if any fail; the revert is verified (status \"rolled_back\", outcome.recovery_status \"restored\"). status \"rollback_incomplete\" (retry_safe=false) means part of the batch may remain: re-read the material, do not resend. Recompiles automatically and returns compile errors.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "material": { "type": "string", "description": "Asset path of the base Material." },
+        "atomic": { "type": "boolean", "description": "Revert all operations if any fails, verified against the pre-batch material (default false). Check recovery_status: only \"restored\" means unchanged." },
+        "operations": {
+          "type": "array",
+          "description": "Ordered list of edit operations.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "action": { "type": "string", "enum": ["connect", "disconnect", "set_property", "delete_node"] },
+              "from_node": { "type": "string" },
+              "from_output": { "type": "string" },
+              "to_node": { "type": "string" },
+              "to_input": { "type": "string" },
+              "to_property": { "type": "string", "enum": ["BaseColor", "Metallic", "Specular", "Roughness", "Anisotropy", "EmissiveColor", "Opacity", "OpacityMask", "Normal", "Tangent", "WorldPositionOffset", "SubsurfaceColor", "AmbientOcclusion", "Refraction", "PixelDepthOffset", "Displacement", "FrontMaterial", "MaterialAttributes"], "description": "Root property API name. UI Final Color is EmissiveColor." },
+              "node": { "type": "string" },
+              "property": { "type": "string" },
+              "value": {}
+            },
+            "required": ["action"]
+          }
+        }
+      },
+      "required": ["material", "operations"]
+    }
+  },
+  {
+    "name": "create_material_instance",
+    "description": "Create a Material Instance Constant (MIC) — the PREFERRED way to make a material variant. Instead of authoring a new base material or duplicating one, create an instance of an existing parameterized material and override its parameters. Instances reuse the parent's compiled shader (nearly free), so studios keep a few master materials + many instances.\n\nReach for this first whenever the request is \"make a red version\", \"a rougher variant\", \"swap the texture\", etc. Only edit a base material's graph when no parameter exposes the needed change.\n\nAfter creating, use set_material_instance_parameter to override values (read_material mode='overview' on the parent lists the available parameter names).",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Name for the new instance, e.g. \"MI_Rock_Red\"." },
+        "path": { "type": "string", "description": "Destination folder under /Game/, e.g. \"/Game/Materials\"." },
+        "parent": { "type": "string", "description": "Asset path of the parent Material or Material Instance to inherit from." }
+      },
+      "required": ["name", "path", "parent"]
+    }
+  },
+  {
+    "name": "set_material_instance_parameter",
+    "description": "Override parameters on a Material Instance Constant, then refresh it. This is how you customize a variant created with create_material_instance.\n\nEach parameter has a type (scalar|vector|texture|switch), a name (must match a parameter exposed by the parent material — see read_material overview), and a value:\n- scalar: a number (e.g. 0.3)\n- vector: [r,g,b] or [r,g,b,a]\n- texture: an asset path string\n- switch: a boolean (static switch)\n\n'parameters' is ONE FLAT array of {type, name, value} objects — no wrapper objects, no nesting. Example:\n{\"instance\": \"/Game/Materials/MI_Rock_Red\", \"parameters\": [\n  {\"type\": \"scalar\", \"name\": \"Roughness\", \"value\": 0.3},\n  {\"type\": \"vector\", \"name\": \"Tint\", \"value\": [1, 0, 0, 1]}\n]}\n\nOnly the named parameters are overridden; everything else inherits from the parent. Verify with read_material mode='overview' on the instance, which reports each parameter's current value and override state.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "instance": { "type": "string", "description": "Asset path of the Material Instance Constant." },
+        "parameters": {
+          "type": "array",
+          "description": "Parameter overrides to apply.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": { "type": "string", "enum": ["scalar", "vector", "texture", "switch"] },
+              "name": { "type": "string", "description": "Parameter name as exposed by the parent material." },
+              "value": {}
+            },
+            "required": ["type", "name", "value"]
+          }
+        }
+      },
+      "required": ["instance", "parameters"]
+    }
+  },
+  {
+    "name": "manage_material",
+    "description": "Change a base Material's shading settings, then recompile. Only the fields you provide are changed. Use read_material mode='overview' first to see current settings.\n\nSettings:\n- blend_mode: Opaque, Masked, Translucent, Additive, Modulate, AlphaComposite, AlphaHoldout\n- shading_model: DefaultLit, Unlit, Subsurface, PreintegratedSkin, ClearCoat, SubsurfaceProfile, TwoSidedFoliage, Hair, Cloth, Eye, SingleLayerWater, ThinTranslucent\n- domain: Surface, DeferredDecal, LightFunction, Volume, PostProcess, UI. Use \"UI\" for the editor's \"User Interface\" domain\n- two_sided: boolean\n\nAffects the whole material (and every instance of it). Bare names ('Opaque') or prefixed names ('BLEND_Opaque') are both accepted.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "material": { "type": "string", "description": "Asset path of the base Material." },
+        "blend_mode": { "type": "string", "description": "e.g. Opaque, Masked, Translucent." },
+        "shading_model": { "type": "string", "description": "e.g. DefaultLit, Unlit, Subsurface." },
+        "domain": { "type": "string", "enum": ["Surface", "DeferredDecal", "LightFunction", "Volume", "PostProcess", "UI", "MD_Surface", "MD_DeferredDecal", "MD_LightFunction", "MD_Volume", "MD_PostProcess", "MD_UI"], "description": "API domain name. UI is the editor User Interface domain." },
+        "two_sided": { "type": "boolean", "description": "Render both faces." }
+      },
+      "required": ["material"]
+    }
+  },
+  {
+    "name": "compile_material",
+    "description": "Recompile a base Material's shaders and report errors plus instruction/sampler statistics. This is the verify step after authoring or editing a material's graph — always call it once edits are done.\n\nReturns: success/status, any shader compile errors, and statistics (vertex/pixel instruction counts, sampler count, texture samples). Watch the sampler count — the hard limit is 16. Note: instruction/sampler stats require compiled shaders and may read 0 in a headless run (check statistics.available).\n\nOnly applies to base Materials; Material Instances inherit their parent's shaders and cannot be compiled directly.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "material": {
+          "type": "string",
+          "description": "Asset path of the base Material to recompile (e.g. \"/Game/Materials/M_Rock\")."
+        }
+      },
+      "required": ["material"]
+    }
+  }
+]

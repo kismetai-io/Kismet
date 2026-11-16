@@ -1,0 +1,634 @@
+{
+	"schema_version": 1,
+	"_comment": "Model catalog. One entry per model: wire id, picker row, context, prices ($ per million tokens) and request-shape capabilities. Lookup order: exact id / ids / aliases, then the longest 'match' pattern ('^' = prefix, otherwise substring). Entries with 'pattern_only' describe a family and are never listed or resolved as a model. Missing fields in known entries inherit 'defaults'. Unknown lookup capabilities are separately conservative in the runtime; default context and price figures are not verified unknown-model capacities or rates. Prices checked 2026-11-06 against platform.claude.com/docs/en/about-claude/pricing and developers.openai.com/api/docs/pricing.",
+	"defaults": {
+		"context_window": 200000,
+		"pricing": { "input": 3.0, "output": 15.0, "cache_read": 0.3, "cache_write": 3.75 },
+		"capabilities": {
+			"thinking": true,
+			"adaptive_thinking": false,
+			"budget_thinking": true,
+			"thinking_always_on": false,
+			"summarized_thinking_display": true,
+			"sampling_params": true,
+			"legacy_thinking_beta": true,
+			"effort": [],
+			"effort_beta": false,
+			"mid_conversation_system": false,
+			"thinking_block_binding": false,
+			"reasoning": false,
+			"fast_mode": "none"
+		}
+	},
+	"models": [
+		{
+			"id": "claude-opus-5-5",
+			"alias": "opus",
+			"aliases": ["opus-5-5", "opus-5.5"],
+			"display_name": "Opus 5.5",
+			"provider": "anthropic",
+			"tier": "premium",
+			"picker": true,
+			"recommended_effort": "high",
+			"context_window": 1000000,
+			"max_output_tokens": 128000,
+			"pricing": { "input": 4.0, "output": 20.0, "cache_read": 0.2, "cache_write": 5.0 },
+			"fast_pricing": { "input": 8.0, "output": 40.0, "cache_read": 0.4, "cache_write": 10.0 },
+			"capabilities": {
+				"adaptive_thinking": true, "budget_thinking": false, "thinking_always_on": true,
+				"sampling_params": false, "legacy_thinking_beta": false,
+				"effort": ["low", "medium", "high", "xhigh", "max"],
+				"mid_conversation_system": true, "thinking_block_binding": true,
+				"fast_mode": "anthropic_speed"
+			}
+		},
+		{
+			"id": "claude-fable-5-1",
+			"alias": "fable",
+			"aliases": ["fable-5-1", "fable-5.1"],
+			"display_name": "Fable 5.1",
+			"provider": "anthropic",
+			"tier": "premium",
+			"picker": true,
+			"recommended_effort": "high",
+			"context_window": 1000000,
+			"max_output_tokens": 128000,
+			"pricing": { "input": 10.0, "output": 50.0, "cache_read": 0.25, "cache_write": 12.5 },
+			"capabilities": {
+				"adaptive_thinking": true, "budget_thinking": false, "thinking_always_on": true,
+				"sampling_params": false, "legacy_thinking_beta": false,
+				"effort": ["low", "medium", "high", "xhigh", "max"],
+				"thinking_block_binding": true
+			}
+		},
+		{
+			"id": "claude-sonnet-5-5",
+			"alias": "sonnet",
+			"aliases": ["sonnet-5-5", "sonnet-5.5"],
+			"display_name": "Sonnet 5.5",
+			"provider": "anthropic",
+			"tier": "standard",
+			"picker": true,
+			"context_window": 1000000,
+			"max_output_tokens": 128000,
+			"pricing": { "input": 2.0, "output": 10.0, "cache_read": 0.1, "cache_write": 2.5 },
+			"capabilities": {
+				"_comment": "thinking:{type:disabled} is rejected; omitting thinking means adaptive.",
+				"adaptive_thinking": true, "budget_thinking": false, "thinking_always_on": true,
+				"sampling_params": false, "legacy_thinking_beta": false,
+				"effort": ["low", "medium", "high", "xhigh", "max"],
+				"thinking_block_binding": true
+			}
+		},
+		{
+			"id": "claude-haiku-5-5",
+			"alias": "haiku",
+			"aliases": ["haiku-5-5", "haiku-5.5"],
+			"display_name": "Haiku 5.5",
+			"provider": "anthropic",
+			"tier": "fast",
+			"picker": true,
+			"context_window": 1000000,
+			"max_output_tokens": 128000,
+			"pricing": { "input": 0.1, "output": 0.5, "cache_read": 0.01, "cache_write": 0.125 },
+			"long_context": { "threshold_tokens": 100000, "input": 0.5, "output": 2.5, "cache_read": 0.05, "cache_write": 0.625 },
+			"capabilities": {
+				"_comment": "Thinking is on by default; always emitting adaptive keeps block binding attached.",
+				"adaptive_thinking": true, "budget_thinking": false, "thinking_always_on": true,
+				"sampling_params": false, "legacy_thinking_beta": false,
+				"effort": ["low", "medium", "high", "xhigh", "max"],
+				"thinking_block_binding": true
+			}
+		},
+		{
+			"id": "gpt-6-astra",
+			"alias": "astra",
+			"aliases": ["gpt6-astra"],
+			"display_name": "GPT-6 Astra",
+			"provider": "openai",
+			"tier": "premium",
+			"picker": true,
+			"recommended_effort": "high",
+			"context_window": 1050000,
+			"max_output_tokens": 128000,
+			"pricing": { "input": 10.0, "output": 50.0, "cache_read": 1.0, "cache_write": 0.0 },
+			"fast_pricing": { "input": 20.0, "output": 100.0, "cache_read": 2.0, "cache_write": 0.0 },
+			"long_context": { "threshold_tokens": 272000, "input": 20.0, "output": 75.0, "cache_read": 2.0, "cache_write": 0.0 },
+			"capabilities": {
+				"reasoning": true, "effort": ["low", "medium", "high", "xhigh", "max"],
+				"fast_mode": "openai_priority"
+			}
+		},
+		{
+			"id": "gpt-6.1-sol",
+			"alias": "sol",
+			"aliases": ["gpt6.1-sol", "gpt-6-sol"],
+			"display_name": "GPT-6.1 Sol",
+			"provider": "openai",
+			"tier": "standard",
+			"picker": true,
+			"context_window": 1050000,
+			"max_output_tokens": 128000,
+			"pricing": { "input": 2.0, "output": 10.0, "cache_read": 0.1, "cache_write": 0.0 },
+			"fast_pricing": { "input": 4.0, "output": 20.0, "cache_read": 0.2, "cache_write": 0.0 },
+			"long_context": { "threshold_tokens": 272000, "input": 4.0, "output": 15.0, "cache_read": 0.2, "cache_write": 0.0 },
+			"capabilities": {
+				"reasoning": true, "effort": ["low", "medium", "high", "xhigh", "max"],
+				"fast_mode": "openai_priority"
+			}
+		},
+		{
+			"id": "gpt-6.1-terra",
+			"alias": "terra",
+			"aliases": ["gpt6.1-terra"],
+			"display_name": "GPT-6.1 Terra",
+			"provider": "openai",
+			"tier": "standard",
+			"picker": true,
+			"context_window": 1050000,
+			"max_output_tokens": 128000,
+			"pricing": { "input": 1.0, "output": 5.0, "cache_read": 0.05, "cache_write": 0.0 },
+			"fast_pricing": { "input": 2.0, "output": 10.0, "cache_read": 0.1, "cache_write": 0.0 },
+			"long_context": { "threshold_tokens": 272000, "input": 2.0, "output": 7.5, "cache_read": 0.1, "cache_write": 0.0 },
+			"capabilities": {
+				"reasoning": true, "effort": ["low", "medium", "high", "xhigh", "max"],
+				"fast_mode": "openai_priority"
+			}
+		},
+		{
+			"id": "gpt-6-luna",
+			"alias": "luna",
+			"aliases": ["gpt6-luna"],
+			"display_name": "GPT-6 Luna",
+			"provider": "openai",
+			"tier": "fast",
+			"picker": true,
+			"context_window": 1050000,
+			"max_output_tokens": 128000,
+			"pricing": { "input": 0.1, "output": 0.5, "cache_read": 0.01, "cache_write": 0.0 },
+			"fast_pricing": { "input": 0.2, "output": 1.0, "cache_read": 0.02, "cache_write": 0.0 },
+			"long_context": { "threshold_tokens": 272000, "input": 0.2, "output": 0.75, "cache_read": 0.02, "cache_write": 0.0 },
+			"capabilities": {
+				"reasoning": true, "effort": ["low", "medium", "high", "xhigh", "max"],
+				"fast_mode": "openai_priority"
+			}
+		},
+		{
+			"id": "gemini-4-argon",
+			"alias": "gemini",
+			"aliases": ["argon", "gemini-4"],
+			"display_name": "Gemini 4 Argon",
+			"provider": "google",
+			"tier": "standard",
+			"picker": true,
+			"context_window": 1048576,
+			"_comment": "Introductory price through 2026-11-30; $4 / $20 from 2026-12-01 (aistudio.google.com/docs/pricing). Cache price not published for the OpenAI-compatible endpoint; 10% of input is an estimate.",
+			"pricing": { "input": 2.0, "output": 10.0, "cache_read": 0.2, "cache_write": 0.0 },
+			"capabilities": { "reasoning": true, "effort": ["low", "medium", "high"] }
+		},
+		{
+			"id": "gemini-3.8-flash",
+			"alias": "gemini-flash",
+			"display_name": "Gemini 3.8 Flash",
+			"provider": "google",
+			"tier": "fast",
+			"picker": true,
+			"context_window": 1048576,
+			"_comment": "Introductory price through 2026-12-31; $1.50 / $7.50 from 2027-01-01.",
+			"pricing": { "input": 0.75, "output": 3.75, "cache_read": 0.075, "cache_write": 0.0 },
+			"capabilities": { "reasoning": true, "effort": ["low", "medium", "high"] }
+		},
+		{
+			"id": "deepseek-v4-pro",
+			"alias": "deepseek",
+			"aliases": ["deepseek-pro"],
+			"display_name": "DeepSeek V4 Pro",
+			"provider": "deepseek",
+			"tier": "standard",
+			"picker": true,
+			"context_window": 1048576,
+			"_comment": "Open weights (MIT). Prices: OpenRouter list 2026-11-06; DeepSeek direct may differ.",
+			"pricing": { "input": 0.12, "output": 4.66, "cache_read": 0.12, "cache_write": 0.0 },
+			"capabilities": {
+				"thinking": false, "budget_thinking": false, "summarized_thinking_display": false,
+				"sampling_params": true, "legacy_thinking_beta": false, "effort": []
+			}
+		},
+		{
+			"id": "deepseek-flash",
+			"alias": "deepseek-flash-v4.1",
+			"aliases": ["deepseek-v4.1-flash"],
+			"display_name": "DeepSeek V4.1 Flash",
+			"provider": "deepseek",
+			"tier": "fast",
+			"picker": true,
+			"context_window": 1048576,
+			"_comment": "Open weights (MIT). DeepSeek's API id is deepseek-flash. Prices: OpenRouter list 2026-11-06.",
+			"pricing": { "input": 0.05, "output": 0.57, "cache_read": 0.05, "cache_write": 0.0 },
+			"capabilities": {
+				"thinking": false, "budget_thinking": false, "summarized_thinking_display": false,
+				"sampling_params": true, "legacy_thinking_beta": false, "effort": []
+			}
+		},
+		{
+			"id": "glm-5.3",
+			"alias": "glm",
+			"aliases": ["glm-5.3-zai"],
+			"display_name": "GLM-5.3 (Z.ai)",
+			"provider": "zai",
+			"tier": "standard",
+			"picker": true,
+			"context_window": 1048576,
+			"_comment": "Open weights (custom license). Prices: OpenRouter list 2026-11-06; Z.ai direct may differ.",
+			"pricing": { "input": 0.07, "output": 1.4, "cache_read": 0.07, "cache_write": 0.0 },
+			"capabilities": {
+				"thinking": false, "budget_thinking": false, "summarized_thinking_display": false,
+				"sampling_params": true, "legacy_thinking_beta": false, "effort": []
+			}
+		},
+		{
+			"id": "glm-5.3-flash",
+			"alias": "glm-flash",
+			"display_name": "GLM-5.3 Flash (Z.ai)",
+			"provider": "zai",
+			"tier": "fast",
+			"picker": true,
+			"context_window": 1048576,
+			"_comment": "Open weights (MIT). Prices: OpenRouter list 2026-11-06.",
+			"pricing": { "input": 0.15, "output": 0.5, "cache_read": 0.15, "cache_write": 0.0 },
+			"capabilities": {
+				"thinking": false, "budget_thinking": false, "summarized_thinking_display": false,
+				"sampling_params": true, "legacy_thinking_beta": false, "effort": []
+			}
+		},
+		{
+			"id": "kimi-k3.1-pro",
+			"alias": "kimi",
+			"display_name": "Kimi K3.1 Pro",
+			"provider": "moonshot",
+			"tier": "standard",
+			"picker": true,
+			"context_window": 1048576,
+			"_comment": "Open weights (custom license). Prices: OpenRouter list 2026-11-06.",
+			"pricing": { "input": 2.0, "output": 10.0, "cache_read": 2.0, "cache_write": 0.0 },
+			"capabilities": {
+				"thinking": false, "budget_thinking": false, "summarized_thinking_display": false,
+				"sampling_params": true, "legacy_thinking_beta": false, "effort": []
+			}
+		},
+		{
+			"id": "MiniMax-M3",
+			"alias": "minimax",
+			"aliases": ["m3", "minimax-m3"],
+			"display_name": "MiniMax M3",
+			"provider": "minimax",
+			"tier": "standard",
+			"picker": true,
+			"context_window": 1000000,
+			"_comment": "MiniMax-M3 standard <=512k input tier. Long-context >512k doubles.",
+			"pricing": { "input": 0.3, "output": 1.2, "cache_read": 0.06, "cache_write": 0.0 },
+			"capabilities": {
+				"thinking": true, "adaptive_thinking": true, "budget_thinking": false,
+				"summarized_thinking_display": false, "sampling_params": true,
+				"legacy_thinking_beta": false, "effort": []
+			}
+		},
+		{
+			"id": "MiniMax-M3.1-Flash",
+			"alias": "minimax-flash",
+			"aliases": ["m3.1-flash", "minimax-m3.1-flash"],
+			"display_name": "MiniMax M3.1 Flash",
+			"provider": "minimax",
+			"tier": "fast",
+			"picker": true,
+			"context_window": 1000000,
+			"_comment": "Prices from the OpenRouter catalog (2026-11-06). Thinking support unconfirmed, so the thinking field is omitted.",
+			"pricing": { "input": 0.15, "output": 0.6, "cache_read": 0.03, "cache_write": 0.0 },
+			"capabilities": {
+				"thinking": false, "budget_thinking": false, "summarized_thinking_display": false,
+				"sampling_params": true, "legacy_thinking_beta": false, "effort": []
+			}
+		},
+		{
+			"id": "claude-mythos-5",
+			"aliases": ["mythos", "mythos-5"],
+			"match": ["mythos-5"],
+			"display_name": "Mythos 5",
+			"provider": "anthropic",
+			"_comment": "Limited availability; resolvable by direct selection, not listed in the picker.",
+			"context_window": 1000000,
+			"pricing": { "input": 10.0, "output": 50.0, "cache_read": 1.0, "cache_write": 12.5 },
+			"capabilities": {
+				"adaptive_thinking": true, "budget_thinking": false, "thinking_always_on": true,
+				"sampling_params": false, "legacy_thinking_beta": false,
+				"effort": ["low", "medium", "high", "xhigh", "max"]
+			}
+		},
+		{
+			"id": "claude-opus-4-8",
+			"aliases": ["opus-4-8"],
+			"match": ["opus-4-8"],
+			"display_name": "Opus 4.8",
+			"provider": "anthropic",
+			"recommended_effort": "xhigh",
+			"context_window": 1000000,
+			"_comment": "Fast mode for Opus 4.8 was a research preview that ended on 2026-11-30, so no fast tier is listed.",
+			"pricing": { "input": 5.0, "output": 25.0, "cache_read": 0.5, "cache_write": 6.25 },
+			"capabilities": {
+				"adaptive_thinking": true, "budget_thinking": false,
+				"sampling_params": false, "legacy_thinking_beta": false,
+				"effort": ["low", "medium", "high", "xhigh", "max"],
+				"mid_conversation_system": true
+			}
+		},
+		{
+			"id": "claude-opus-4-7",
+			"aliases": ["opus-4-7"],
+			"match": ["opus-4-7"],
+			"display_name": "Opus 4.7",
+			"provider": "anthropic",
+			"recommended_effort": "xhigh",
+			"context_window": 1000000,
+			"pricing": { "input": 5.0, "output": 25.0, "cache_read": 0.5, "cache_write": 6.25 },
+			"capabilities": {
+				"adaptive_thinking": true, "budget_thinking": false,
+				"sampling_params": false, "legacy_thinking_beta": false,
+				"effort": ["low", "medium", "high", "xhigh", "max"]
+			}
+		},
+		{
+			"id": "claude-opus-4-6",
+			"aliases": ["opus-4-6", "opus-1m"],
+			"match": ["opus-4-6"],
+			"display_name": "Opus 4.6",
+			"provider": "anthropic",
+			"context_window": 1000000,
+			"_comment": "Fast mode was removed for Opus 4.6 (requests run at standard speed), so no fast tier is listed.",
+			"pricing": { "input": 5.0, "output": 25.0, "cache_read": 0.5, "cache_write": 6.25 },
+			"capabilities": {
+				"adaptive_thinking": true, "effort": ["low", "medium", "high"], "effort_beta": true
+			}
+		},
+		{
+			"id": "claude-sonnet-4-6",
+			"aliases": ["sonnet-4-6", "sonnet-1m"],
+			"match": ["sonnet-4-6"],
+			"display_name": "Sonnet 4.6",
+			"provider": "anthropic",
+			"context_window": 1000000,
+			"pricing": { "input": 3.0, "output": 15.0, "cache_read": 0.3, "cache_write": 3.75 },
+			"capabilities": {
+				"adaptive_thinking": true, "effort": ["low", "medium", "high"], "effort_beta": true
+			}
+		},
+		{
+			"id": "claude-haiku-4-5-20251001",
+			"ids": ["claude-haiku-4-5"],
+			"aliases": ["haiku-4-5"],
+			"match": ["haiku-4"],
+			"display_name": "Haiku 4.5",
+			"provider": "anthropic",
+			"context_window": 200000,
+			"pricing": { "input": 1.0, "output": 5.0, "cache_read": 0.1, "cache_write": 1.25 }
+		},
+		{
+			"id": "claude-sonnet-4-5-20250929",
+			"ids": ["claude-sonnet-4-5"],
+			"match": ["sonnet-4-5"],
+			"display_name": "Sonnet 4.5",
+			"provider": "anthropic",
+			"context_window": 200000,
+			"pricing": { "input": 3.0, "output": 15.0, "cache_read": 0.3, "cache_write": 3.75 }
+		},
+		{
+			"id": "claude-opus-4-5-20251101",
+			"ids": ["claude-opus-4-5"],
+			"match": ["opus-4-5"],
+			"display_name": "Opus 4.5",
+			"provider": "anthropic",
+			"context_window": 200000,
+			"pricing": { "input": 15.0, "output": 75.0, "cache_read": 1.5, "cache_write": 18.75 }
+		},
+		{
+			"id": "claude-opus-4-1-20250805",
+			"ids": ["claude-opus-4-1"],
+			"match": ["opus-4-1"],
+			"display_name": "Opus 4.1",
+			"provider": "anthropic",
+			"context_window": 200000,
+			"pricing": { "input": 15.0, "output": 75.0, "cache_read": 1.5, "cache_write": 18.75 }
+		},
+		{
+			"id": "claude-opus-4-20250514",
+			"ids": ["claude-opus-4-0"],
+			"match": ["opus-4"],
+			"display_name": "Opus 4",
+			"provider": "anthropic",
+			"context_window": 200000,
+			"pricing": { "input": 15.0, "output": 75.0, "cache_read": 1.5, "cache_write": 18.75 }
+		},
+		{
+			"id": "claude-sonnet-4-20250514",
+			"ids": ["claude-sonnet-4-0"],
+			"match": ["sonnet-4"],
+			"display_name": "Sonnet 4",
+			"provider": "anthropic",
+			"context_window": 200000,
+			"pricing": { "input": 3.0, "output": 15.0, "cache_read": 0.3, "cache_write": 3.75 }
+		},
+		{
+			"id": "claude-3-5-sonnet-20241022",
+			"match": ["3-5-sonnet"],
+			"display_name": "Sonnet 3.5",
+			"provider": "anthropic",
+			"pricing": { "input": 3.0, "output": 15.0, "cache_read": 0.3, "cache_write": 3.75 },
+			"capabilities": { "thinking": false, "budget_thinking": false, "legacy_thinking_beta": false }
+		},
+		{
+			"id": "claude-3-5-haiku-20241022",
+			"match": ["3-5-haiku"],
+			"display_name": "Haiku 3.5",
+			"provider": "anthropic",
+			"pricing": { "input": 1.0, "output": 5.0, "cache_read": 0.1, "cache_write": 1.25 },
+			"capabilities": { "thinking": false, "budget_thinking": false, "legacy_thinking_beta": false }
+		},
+		{
+			"id": "claude-3-opus-20240229",
+			"match": ["3-opus"],
+			"display_name": "Opus 3",
+			"provider": "anthropic",
+			"pricing": { "input": 3.0, "output": 15.0, "cache_read": 0.3, "cache_write": 3.75 },
+			"capabilities": { "thinking": false, "budget_thinking": false, "legacy_thinking_beta": false }
+		},
+		{
+			"id": "claude-3-haiku-20240307",
+			"display_name": "claude-3-haiku-20240307",
+			"provider": "anthropic",
+			"pricing": { "input": 1.0, "output": 5.0, "cache_read": 0.1, "cache_write": 1.25 },
+			"capabilities": { "thinking": false, "budget_thinking": false, "legacy_thinking_beta": false }
+		},
+		{
+			"id": "gpt-5.5",
+			"aliases": ["gpt5.5"],
+			"match": ["^gpt-5.5"],
+			"display_name": "GPT-5.5",
+			"provider": "openai",
+			"recommended_effort": "high",
+			"context_window": 1050000,
+			"pricing": { "input": 5.0, "output": 30.0, "cache_read": 0.5, "cache_write": 0.0 },
+			"fast_pricing": { "input": 12.5, "output": 75.0, "cache_read": 1.25, "cache_write": 0.0 },
+			"capabilities": { "reasoning": true, "effort": ["low", "medium", "high"], "fast_mode": "openai_priority" }
+		},
+		{
+			"id": "gpt-5.4",
+			"aliases": ["gpt5.4"],
+			"match": ["^gpt-5.4"],
+			"display_name": "GPT-5.4",
+			"provider": "openai",
+			"context_window": 1050000,
+			"pricing": { "input": 2.5, "output": 15.0, "cache_read": 0.25, "cache_write": 0.0 },
+			"fast_pricing": { "input": 5.0, "output": 30.0, "cache_read": 0.5, "cache_write": 0.0 },
+			"capabilities": { "reasoning": true, "effort": ["low", "medium", "high"], "fast_mode": "openai_priority" }
+		},
+		{
+			"id": "gpt-5.4-mini",
+			"match": ["^gpt-5.4-mini"],
+			"display_name": "GPT-5.4 Mini",
+			"provider": "openai",
+			"context_window": 400000,
+			"pricing": { "input": 0.75, "output": 4.5, "cache_read": 0.075, "cache_write": 0.0 },
+			"fast_pricing": { "input": 1.5, "output": 9.0, "cache_read": 0.15, "cache_write": 0.0 },
+			"capabilities": { "reasoning": true, "effort": ["low", "medium", "high"], "fast_mode": "openai_priority" }
+		},
+		{
+			"id": "gpt-5.4-nano",
+			"match": ["^gpt-5.4-nano"],
+			"display_name": "GPT-5.4 Mini",
+			"provider": "openai",
+			"context_window": 400000,
+			"pricing": { "input": 0.75, "output": 4.5, "cache_read": 0.075, "cache_write": 0.0 },
+			"capabilities": { "reasoning": true, "effort": ["low", "medium", "high"] }
+		},
+		{
+			"id": "gpt-5",
+			"aliases": ["gpt5"],
+			"display_name": "GPT-5",
+			"provider": "openai",
+			"context_window": 400000,
+			"pricing": { "input": 1.25, "output": 10.0, "cache_read": 0.125, "cache_write": 0.0 },
+			"capabilities": { "reasoning": true, "effort": ["low", "medium", "high"] }
+		},
+		{
+			"id": "gpt-5-mini",
+			"aliases": ["gpt5-mini"],
+			"match": ["^gpt-5-mini"],
+			"display_name": "GPT-5 Mini",
+			"provider": "openai",
+			"context_window": 400000,
+			"pricing": { "input": 0.25, "output": 2.0, "cache_read": 0.025, "cache_write": 0.0 },
+			"capabilities": { "reasoning": true, "effort": ["low", "medium", "high"] }
+		},
+		{
+			"id": "gpt-5-nano",
+			"aliases": ["gpt5-nano"],
+			"match": ["^gpt-5-nano"],
+			"display_name": "GPT-5 Mini",
+			"provider": "openai",
+			"context_window": 400000,
+			"pricing": { "input": 0.25, "output": 2.0, "cache_read": 0.025, "cache_write": 0.0 },
+			"capabilities": { "reasoning": true, "effort": ["low", "medium", "high"] }
+		},
+		{
+			"id": "o3",
+			"match": ["^o3-"],
+			"display_name": "o3",
+			"provider": "openai",
+			"context_window": 200000,
+			"pricing": { "input": 1.25, "output": 10.0, "cache_read": 0.125, "cache_write": 0.0 },
+			"capabilities": { "reasoning": true, "effort": ["low", "medium", "high"] }
+		},
+		{
+			"id": "o4-mini",
+			"match": ["^o4-mini-"],
+			"display_name": "o4-mini",
+			"provider": "openai",
+			"context_window": 200000,
+			"pricing": { "input": 1.25, "output": 10.0, "cache_read": 0.125, "cache_write": 0.0 },
+			"capabilities": { "reasoning": true, "effort": ["low", "medium", "high"] }
+		},
+		{
+			"id": "MiniMax-M2.7",
+			"aliases": ["m2.7", "minimax-m2.7"],
+			"match": ["^minimax-m2.7"],
+			"display_name": "MiniMax M2.7",
+			"provider": "minimax",
+			"context_window": 204800,
+			"pricing": { "input": 0.3, "output": 1.2, "cache_read": 0.06, "cache_write": 0.375 },
+			"fast_pricing": { "input": 0.6, "output": 2.4, "cache_read": 0.06, "cache_write": 0.375 },
+			"capabilities": {
+				"thinking": false, "budget_thinking": false, "summarized_thinking_display": false,
+				"sampling_params": true, "legacy_thinking_beta": false, "effort": [],
+				"fast_mode": "model_swap", "fast_mode_model": "MiniMax-M2.7-highspeed"
+			}
+		},
+		{
+			"id": "MiniMax-M2.7-highspeed",
+			"aliases": ["minimax-m2.7-highspeed"],
+			"match": ["^minimax-m2.7-highspeed"],
+			"display_name": "MiniMax M2.7 Highspeed",
+			"provider": "minimax",
+			"context_window": 204800,
+			"pricing": { "input": 0.6, "output": 2.4, "cache_read": 0.06, "cache_write": 0.375 },
+			"capabilities": {
+				"thinking": false, "budget_thinking": false, "summarized_thinking_display": false,
+				"sampling_params": true, "legacy_thinking_beta": false, "effort": []
+			}
+		},
+
+		{
+			"pattern_only": true,
+			"display_name": "Claude 5",
+			"_comment": "Any other Claude 5-generation id (dated snapshots, platform prefixes, future point releases): adaptive-only thinking, effort, no sampling params.",
+			"match": ["claude-opus-5", "claude-sonnet-5", "claude-haiku-5", "claude-fable-5"],
+			"context_window": 1000000,
+			"pricing": { "input": 5.0, "output": 25.0, "cache_read": 0.5, "cache_write": 6.25 },
+			"capabilities": {
+				"adaptive_thinking": true, "budget_thinking": false, "thinking_always_on": true,
+				"sampling_params": false, "legacy_thinking_beta": false,
+				"effort": ["low", "medium", "high", "xhigh", "max"],
+				"thinking_block_binding": true
+			}
+		},
+		{
+			"pattern_only": true,
+			"match": ["haiku"],
+			"pricing": { "input": 1.0, "output": 5.0, "cache_read": 0.1, "cache_write": 1.25 }
+		},
+		{
+			"pattern_only": true,
+			"match": ["claude-3-"],
+			"capabilities": { "thinking": false, "budget_thinking": false, "legacy_thinking_beta": false }
+		},
+		{
+			"pattern_only": true,
+			"match": ["^gpt-6"],
+			"context_window": 1050000,
+			"pricing": { "input": 2.0, "output": 10.0, "cache_read": 0.1, "cache_write": 0.0 },
+			"capabilities": { "reasoning": true, "effort": ["low", "medium", "high", "xhigh", "max"] }
+		},
+		{
+			"pattern_only": true,
+			"match": ["^gpt-5", "^gpt5", "^o1", "^o3", "^o4"],
+			"pricing": { "input": 1.25, "output": 10.0, "cache_read": 0.125, "cache_write": 0.0 },
+			"capabilities": { "reasoning": true, "effort": ["low", "medium", "high"] }
+		},
+		{
+			"pattern_only": true,
+			"match": ["^minimax-"],
+			"capabilities": {
+				"thinking": false, "budget_thinking": false, "summarized_thinking_display": false,
+				"sampling_params": true, "legacy_thinking_beta": false, "effort": []
+			}
+		}
+	]
+}

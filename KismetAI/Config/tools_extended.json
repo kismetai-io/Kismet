@@ -1,0 +1,231 @@
+[
+    {
+        "name": "manage_blueprint",
+        "description": "Structural Blueprint operations: add/remove variables, functions, macros, custom events, event dispatchers, interfaces. Change parent class.\nAll operations batched in one call, executed in order, then compiled.\n\nActions:\n- \"add_variable\": name, type (required). Optional: category, default_value, replication (None/Replicated/RepNotify), rep_notify_func, expose_on_spawn, save_game, blueprint_read_only\n- \"remove_variable\": name\n- \"set_variable_property\": name, property, value. Properties: category, default_value, replication, replication_condition (ELifetimeCondition e.g. COND_OwnerOnly/COND_SkipOwner; variable must be Replicated), rep_notify_func, container_type (none/array/set), expose_on_spawn, save_game, blueprint_read_only, instance_editable, transient, config, tooltip\n- \"add_function\": name. Optional: inputs[{name,type}], outputs[{name,type}], access (Public/Protected/Private), pure (bool), const (bool)\n- \"remove_function\": name\n- \"add_function_param\": Add a parameter to an existing function/macro. function (name), param_name, type, direction (\"input\" or \"output\", default input)\n- \"remove_function_param\": Remove a parameter. function, param_name\n- \"add_macro\": name. Optional: inputs[{name,type}], outputs[{name,type}]\n- \"remove_macro\": name\n- \"add_custom_event\": name. Optional: graph (default EventGraph), params[{name,type}], replication (None/Server/Client/NetMulticast), reliable (bool), with_validation (bool — server RPC validation stub)\n- \"add_event_dispatcher\": name. Optional: params[{name,type}]\n- \"remove_event_dispatcher\": name\n- \"add_interface\": interface_path (e.g. \"/Game/BPI_Damageable\")\n- \"remove_interface\": interface_path\n- \"set_parent_class\": parent_class_path (e.g. \"/Script/Engine.Character\")\n- \"set_class_default\": property, value. Sets an inherited Class Defaults (CDO) property — e.g. a Game Mode's DefaultPawnClass, PlayerControllerClass, HUDClass, GameStateClass, PlayerStateClass; or bools like bStartPlayersAsSpectators. NOT for Blueprint-declared variables (use set_variable_property). Class-typed values accept a class path (\"/Script/Engine.SpectatorPawn\") or a Blueprint name/path (\"BP_MyPawn\" / \"/Game/BP_MyPawn\"). Use inspect_class to discover property names.\n- \"get_class_default\": read counterpart to set_class_default — READ current CDO values. With property: returns that property's value (exported text) and type. Without property: lists every editable default that differs from the parent class (the Blueprint's customizations, including its own variables' defaults) as {property, type, value, declared_here}. Read-only: triggers no compile. Use it to check a value before changing it or to verify a set_class_default took effect.\n\nType format: \"bool\", \"int\", \"float\", \"string\", \"name\", \"text\", \"object:ClassName\", \"struct:/Script/CoreUObject.Vector\", \"enum:/Script/Engine.EBlendMode\". Containers: \"array<int>\", \"set<string>\", \"map<name,int>\" (or \"int[]\").\nShort names resolve to Engine module: \"object:Actor\" \u2192 /Script/Engine.Actor\n\nSetting replication=RepNotify auto-creates the OnRep_<Var> handler function graph (populate it with write_blueprint if needed). add_event_dispatcher with params[] builds the dispatcher's signature so bound callbacks receive those args.\n\nAfter add_function/add_macro, the graph is EMPTY \u2014 use write_blueprint(graph=\"FunctionName\") to populate it with nodes.\nAfter add_custom_event, use edit_blueprint to wire the event node to other nodes.\n\nRead-only operations also return asset_revision for the whole Blueprint package. Use that token as expected_revision when applying changes based on this read.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "expected_revision": {"type": "string", "description": "Copy the latest asset_revision returned for this Blueprint package by a read or completed operation. The token covers the whole asset, including all graphs and the widget Designer, and is checked before mutation. On a revision conflict, reread the asset and replan; never retry the old operation automatically."},
+                "blueprint": {
+                    "type": "string",
+                    "description": "Blueprint asset path"
+                },
+                "operations": {
+                    "type": "array",
+                    "description": "Array of structural operations to perform in order.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "action": {
+                                "type": "string",
+                                "enum": ["add_variable", "remove_variable", "set_variable_property", "add_function", "remove_function", "add_function_param", "remove_function_param", "add_macro", "remove_macro", "add_custom_event", "add_event_dispatcher", "remove_event_dispatcher", "add_interface", "remove_interface", "set_parent_class", "set_class_default", "get_class_default"]
+                            },
+                            "name": { "type": "string", "description": "Variable/function/macro/event/dispatcher name" },
+                            "type": { "type": "string", "description": "Type string (e.g. \"float\", \"object:Actor\")" },
+                            "category": { "type": "string" },
+                            "default_value": { "type": "string" },
+                            "replication": { "type": "string", "enum": ["None", "Replicated", "RepNotify", "Server", "Client", "NetMulticast"] },
+                            "rep_notify_func": { "type": "string" },
+                            "expose_on_spawn": { "type": "boolean" },
+                            "save_game": { "type": "boolean" },
+                            "blueprint_read_only": { "type": "boolean" },
+                            "reliable": { "type": "boolean" },
+                            "function": { "type": "string", "description": "Function/macro name (for add/remove_function_param)" },
+                            "param_name": { "type": "string", "description": "Parameter name (for add/remove_function_param)" },
+                            "direction": { "type": "string", "enum": ["input", "output"], "description": "Parameter direction (default: input)" },
+                            "property": { "type": "string", "description": "For set_variable_property" },
+                            "value": { "type": "string", "description": "For set_variable_property" },
+                            "inputs": { "type": "array", "items": { "type": "object", "properties": { "name": {"type":"string"}, "type": {"type":"string"} }, "required": ["name","type"] } },
+                            "outputs": { "type": "array", "items": { "type": "object", "properties": { "name": {"type":"string"}, "type": {"type":"string"} }, "required": ["name","type"] } },
+                            "params": { "type": "array", "items": { "type": "object", "properties": { "name": {"type":"string"}, "type": {"type":"string"} }, "required": ["name","type"] } },
+                            "access": { "type": "string", "enum": ["Public", "Protected", "Private"] },
+                            "pure": { "type": "boolean" },
+                            "const": { "type": "boolean" },
+                            "graph": { "type": "string", "description": "Target graph for add_custom_event (default: EventGraph)" },
+                            "interface_path": { "type": "string" },
+                            "parent_class_path": { "type": "string" }
+                        },
+                        "required": ["action"]
+                    }
+                }
+            },
+            "required": ["blueprint", "operations"]
+        }
+    },
+    {
+        "name": "manage_components",
+        "description": "Manage Actor components. Only works on Actor-based Blueprints.\n\nThe property-setting actions (set_component_property, set_collision, set_material, set_post_process_material) reach components from ALL three origins: added in this Blueprint, inherited from a parent Blueprint, or inherited from a native C++ parent class — address them by variable name (the name read_blueprint's overview shows, including [Inherited] ones). add/remove/reparent only operate on this Blueprint's own components.\n\nActions:\n- \"add_component\": class, name (required). Optional: parent (component name, omit for root)\n- \"remove_component\": name. Children are promoted to parent.\n- \"set_component_property\": name, property, value. Uses C++ property names and UE reflection. Cannot target array elements (\"OverrideMaterials[0]\") — use set_material for material slots.\n- \"get_component_property\": name. Optional: property. READ a component template's property values. With property: that value (UE text format + type). Without: every property whose value differs from the component class defaults — e.g. the assigned StaticMesh, material overrides, transform, custom variable defaults. For SkeletalMeshComponents the response also carries an \"animation\" object (mode/anim_class/skeletal_mesh/skeleton). Works on this Blueprint's components, inherited Blueprint components, and native C++ components; read-only (no compile). Use it to inspect a component before changing it or to verify a set took effect.\n- \"get_animation\": name. READ the animation config of a SkeletalMeshComponent: animation_mode, anim_class (resolved to the source Animation Blueprint asset path, e.g. /Game/.../ABP_Hero — anim_class_raw keeps the _C class name), anim_to_play (single-node asset), skeletal_mesh and its skeleton. Answers \"which Animation Blueprint is set on this mesh?\". Read-only. Works on own, inherited-Blueprint, and native C++ mesh components.\n- \"set_animation\": name + at least one of: anim_class (ABP asset OR generated-class path; \"\"/\"None\" clears), animation_mode (AnimationBlueprint/AnimationSingleNode/AnimationCustomMode), anim_to_play (single-node animation asset; \"\"/\"None\" clears). Assigning anim_class auto-sets AnimationMode=AnimationBlueprint and anim_to_play auto-sets AnimationSingleNode unless animation_mode is passed explicitly. Validates the assigned skeleton against the component's SkeletalMesh skeleton (SKELETON_MISMATCH on conflict); if the component has no mesh, the assignment still applies and the response includes a warning. Works on inherited C++ mesh components too (writes the inherited override that serializes with the Blueprint).\n- \"reparent_component\": name, new_parent (empty string = make root)\n- \"set_collision\": name + at least one of: profile (collision preset, e.g. \"BlockAll\", \"OverlapAllDynamic\", \"NoCollision\", \"Pawn\", \"Custom\"), collision_enabled (\"NoCollision\"/\"QueryOnly\"/\"PhysicsOnly\"/\"QueryAndPhysics\"), object_type (channel, e.g. \"WorldStatic\", \"Pawn\"), responses (object mapping channel -> \"Block\"/\"Overlap\"/\"Ignore\", e.g. {\"Pawn\":\"Overlap\",\"WorldStatic\":\"Block\"}). Use this for collision instead of set_component_property on BodyInstance — it loads the profile's channel responses correctly. Standard channels: WorldStatic, WorldDynamic, Pawn, Visibility, Camera, PhysicsBody, Vehicle, Destructible.\n- \"set_material\": name, material (asset path, e.g. \"/Game/Materials/M_Foo\" or \"/Engine/EngineMaterials/DefaultMaterial\"). Optional: index (material slot, default 0). Sets/overrides a material slot on a mesh/primitive component. Use this instead of set_component_property on OverrideMaterials.\n- \"set_post_process_material\": name, material (asset path of a PostProcess-domain material). Optional: weight (0..1, default 1.0), remove (true to remove the blendable instead). Adds/updates a post-process material (blendable) on a PostProcessComponent, CameraComponent, or SceneCaptureComponent2D. Use this instead of set_component_property on Settings — WeightedBlendables is nested inside FPostProcessSettings and unreachable by generic reflection. The material must have domain PostProcess (change it with manage_material domain='PostProcess' first if needed).\n\nComponent classes (use short name without U prefix):\nScene: SceneComponent, StaticMeshComponent, SkeletalMeshComponent, CameraComponent, SpringArmComponent, BoxComponent, SphereComponent, CapsuleComponent, PointLightComponent, SpotLightComponent, AudioComponent, ArrowComponent, ChildActorComponent, ParticleSystemComponent, NiagaraComponent, WidgetComponent, TextRenderComponent\n\nProperty value formats:\n- Vector: \"X=100.0 Y=0.0 Z=50.0\"\n- Rotator: \"P=0.0 Y=90.0 R=0.0\"\n- Asset: \"/Game/Meshes/SM_Cube.SM_Cube\"\n- Bool: \"true\" / \"false\"\n- Enum: \"ECollisionEnabled::QueryAndPhysics\"\n\nProperty names use C++ names: RelativeLocation (not Location), bVisible (not Visible), StaticMesh (not Mesh).\n\nRead-only operations also return asset_revision for the whole Blueprint package. Use that token as expected_revision when applying changes based on this read.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "expected_revision": {"type": "string", "description": "Copy the latest asset_revision returned for this Blueprint package by a read or completed operation. The token covers the whole asset, including all graphs and the widget Designer, and is checked before mutation. On a revision conflict, reread the asset and replan; never retry the old operation automatically."},
+                "blueprint": {
+                    "type": "string",
+                    "description": "Blueprint asset path"
+                },
+                "operations": {
+                    "type": "array",
+                    "description": "Array of component operations.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "action": {
+                                "type": "string",
+                                "enum": ["add_component", "remove_component", "set_component_property", "get_component_property", "get_animation", "set_animation", "reparent_component", "set_collision", "set_material", "set_post_process_material"]
+                            },
+                            "class": { "type": "string", "description": "Component class short name (e.g. \"StaticMeshComponent\")" },
+                            "name": { "type": "string", "description": "Component variable name" },
+                            "parent": { "type": "string", "description": "Parent component name (omit for root)" },
+                            "new_parent": { "type": "string", "description": "New parent for reparent (empty = root)" },
+                            "property": { "type": "string", "description": "C++ property name on component template" },
+                            "value": { "type": "string", "description": "Property value in UE format" },
+                            "anim_class": { "type": "string", "description": "set_animation: Animation Blueprint asset path (e.g. \"/Game/.../ABP_Hero\") or its generated-class path. Empty/\"None\" clears it. Sets AnimationMode=AnimationBlueprint unless animation_mode is given." },
+                            "animation_mode": { "type": "string", "enum": ["AnimationBlueprint", "AnimationSingleNode", "AnimationCustomMode"], "description": "set_animation: EAnimationMode value" },
+                            "anim_to_play": { "type": "string", "description": "set_animation: single-node-mode animation asset path (e.g. an AnimSequence). Empty/\"None\" clears it. Sets AnimationMode=AnimationSingleNode unless animation_mode is given." },
+                            "material": { "type": "string", "description": "Material asset path (set_material, set_post_process_material)" },
+                            "index": { "type": "integer", "description": "Material slot index for set_material (default 0)" },
+                            "weight": { "type": "number", "description": "Blendable weight 0..1 for set_post_process_material (default 1.0)" },
+                            "remove": { "type": "boolean", "description": "set_post_process_material: remove the blendable instead of adding" },
+                            "profile": { "type": "string", "description": "Collision preset name for set_collision" },
+                            "collision_enabled": { "type": "string", "description": "set_collision: NoCollision/QueryOnly/PhysicsOnly/QueryAndPhysics" },
+                            "object_type": { "type": "string", "description": "set_collision: object channel, e.g. WorldStatic, Pawn" },
+                            "responses": { "type": "object", "description": "set_collision: map of channel -> Block/Overlap/Ignore" }
+                        },
+                        "required": ["action"]
+                    }
+                }
+            },
+            "required": ["blueprint", "operations"]
+        }
+    },
+    {
+        "name": "layout_graph",
+        "description": "Reformat the visual layout of a Blueprint graph (positions only \u2014 wiring is never touched). Runs a hierarchical layout over the connected components of the given nodes (whole graph when 'nodes' is omitted) and reflows comment boxes around their member nodes afterwards.\nUse ONLY when the user explicitly asks to clean up / organize / format a graph's layout. Normal edits never need this \u2014 new nodes are placed automatically \u2014 and reformatting overwrites human-authored placement.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "expected_revision": {"type": "string", "description": "Copy the latest asset_revision returned for this Blueprint package by a read or completed operation. The token covers the whole asset, including all graphs and the widget Designer, and is checked before mutation. On a revision conflict, reread the asset and replan; never retry the old operation automatically."},
+                "blueprint": {
+                    "type": "string",
+                    "description": "Blueprint asset path, e.g. \"/Game/MyProject/BP_Test\""
+                },
+                "graph": {
+                    "type": "string",
+                    "description": "Graph name. Defaults to \"EventGraph\"."
+                },
+                "nodes": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Optional node names to use as seeds \u2014 each seed's whole connected component is reformatted. Omit to reformat the entire graph."
+                },
+                "reroute": {
+                    "type": "boolean",
+                    "description": "When true, bend long wires (those spanning more than one column) through reroute knot nodes. Default false."
+                },
+                "group": {
+                    "type": "boolean",
+                    "description": "When true, wrap each event subtree in a keyword-colored comment box. Default false."
+                }
+            },
+            "required": ["blueprint"]
+        }
+    },
+    {
+        "name": "manage_state_machine",
+        "description": "Author Animation Blueprint state machines: create a state machine in the AnimGraph, then add states, conduits, aliases, and transitions inside it, set transition properties, set the entry state, rename and delete states/transitions. Animation Blueprints only.\nAll operations are batched in one call, executed in order, then the Blueprint is compiled. Each operation returns its own success/error.\n\nGraph addressing: 'state_machine' is the graph address of the state machine graph to operate inside, e.g. \"AnimGraph/Locomotion\" (or just the unique SM name \"Locomotion\"). For add_state_machine, 'state_machine' instead names the host anim graph to create the SM in (default: the AnimGraph) and 'name' is the new SM's name.\n\nStates/conduits/aliases are referenced BY NAME within the state machine. Each add_state / add_conduit / add_state_alias returns the bound-graph address of the new node (e.g. \"AnimGraph/Locomotion/Idle\") — write that graph's pose content with write_blueprint/insert_node. add_transition and set_transition_properties return both the transition RULE graph address by object name AND an endpoint-form address \"rule_graph_address\" (e.g. \"AnimGraph/Locomotion/Idle->Walk\") — populate it with a bool result (the entry condition) via write_blueprint.\n\nENDPOINT ADDRESSING (every graph tool): a transition rule graph is addressable by endpoints rather than its opaque object name — \"AnimGraph/Locomotion/Idle->Walk\" (spaces around -> tolerated, state names space/underscore/case-tolerant). Duplicate from->to pairs: append \"#N\" (1-based, creation order), e.g. \"Idle->Walk#2\". A transition's custom blend graph (when present): append \"@blend\", e.g. \"Idle->Walk@blend\". This is the stable way to address editor-authored transitions whose graph names look like \"AnimationTransitionGraph_3\". (Note: the separate 'index' field on set_transition_properties/delete_transition stays 0-based; the endpoint \"#N\" is 1-based.)\n\nActions:\n- \"get\": returns the SM structure as JSON — entry_state, states[] (name, kind, bound_graph address), transitions[] (from, to, node, rule_graph endpoint address, has_custom_blend + custom_blend_graph, priority_order, crossfade_duration, blend_mode, automatic_rule, bidirectional, disabled). Read the SM this way before editing.\n- \"add_state_machine\": name (required). Optional: state_machine = host anim graph (default AnimGraph). Creates an empty state machine (with an Entry node) and returns its graph address.\n- \"add_state\": name (required). Adds an empty state. Returns its bound-graph address. An empty state compiles clean (it outputs a reference/identity pose); fill it with write_blueprint.\n- \"add_conduit\": name (required). Adds a conduit (a branch point with no pose).\n- \"add_state_alias\": name (required). Optional: aliased_states (array of state names) OR global (bool — alias all states). Adds a state alias used as a shared transition source.\n- \"add_transition\": from, to (required, state/conduit/alias names). Creates a transition. Optional properties (same as set_transition_properties). Returns the transition rule graph address.\n- \"set_transition_properties\": identify the transition by EITHER {from, to} (optionally + index) OR {transition: nodeName}. Settable: crossfade_duration (float seconds), priority_order (int), blend_mode (EAlphaBlendOption name, e.g. \"Linear\"/\"Cubic\"/\"HermiteCubic\"), automatic_rule (bool — auto-trigger based on the source state's sequence player remaining time), automatic_rule_trigger_time (float), bidirectional (bool), disabled (bool), min_time_before_reentry (float).\n- \"set_entry_state\": state (required). Re-points the Entry node's single outgoing link to the named state (or conduit). Breaks the previous entry link first.\n- \"rename_state\": state (current name), new_name (required). Renames the state/conduit/alias AND its bound graph so path addressing stays consistent.\n- \"delete_state\": state (required). Deletes the state/conduit/alias; any transitions touching it are removed too.\n- \"delete_transition\": identify by {from, to[, index]} OR {transition: nodeName}.\n\nMulti-transition disambiguation: when more than one transition shares the same from->to pair, address a specific one by 'index' (0-based, in creation order among matching from->to pairs) or by its exact 'transition' node name (the node names appear in read_blueprint(mode=\"describe\") of the SM graph).\n\nRead-only operations also return asset_revision for the whole Blueprint package. Use that token as expected_revision when applying changes based on this read.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "expected_revision": {"type": "string", "description": "Copy the latest asset_revision returned for this Blueprint package by a read or completed operation. The token covers the whole asset, including all graphs and the widget Designer, and is checked before mutation. On a revision conflict, reread the asset and replan; never retry the old operation automatically."},
+                "blueprint": {
+                    "type": "string",
+                    "description": "Animation Blueprint asset path, e.g. \"/Game/Characters/ABP_Hero\""
+                },
+                "state_machine": {
+                    "type": "string",
+                    "description": "Graph address of the state machine graph to operate in (e.g. \"AnimGraph/Locomotion\" or the unique name \"Locomotion\"). For add_state_machine this is the HOST anim graph to create the SM in (default: AnimGraph)."
+                },
+                "operations": {
+                    "type": "array",
+                    "description": "Array of state-machine operations to perform in order.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "action": {
+                                "type": "string",
+                                "enum": ["get", "add_state_machine", "add_state", "add_conduit", "add_state_alias", "add_transition", "set_transition_properties", "set_entry_state", "rename_state", "delete_state", "delete_transition"]
+                            },
+                            "name": { "type": "string", "description": "Name for add_state_machine / add_state / add_conduit / add_state_alias" },
+                            "state": { "type": "string", "description": "State/conduit/alias name (set_entry_state, rename_state, delete_state)" },
+                            "new_name": { "type": "string", "description": "New name for rename_state" },
+                            "from": { "type": "string", "description": "Source state/conduit/alias name (add_transition / set_transition_properties / delete_transition)" },
+                            "to": { "type": "string", "description": "Target state/conduit/alias name (add_transition / set_transition_properties / delete_transition)" },
+                            "index": { "type": "integer", "description": "0-based disambiguator among transitions sharing the same from->to pair (set_transition_properties / delete_transition). Default 0." },
+                            "transition": { "type": "string", "description": "Exact transition node name, as an alternative to {from,to[,index]} (set_transition_properties / delete_transition)" },
+                            "aliased_states": { "type": "array", "items": { "type": "string" }, "description": "State names this alias points to (add_state_alias)" },
+                            "global": { "type": "boolean", "description": "add_state_alias: alias all states instead of a specific list" },
+                            "crossfade_duration": { "type": "number", "description": "Transition blend time in seconds" },
+                            "priority_order": { "type": "integer", "description": "Transition priority (higher wins when multiple are ready)" },
+                            "blend_mode": { "type": "string", "description": "EAlphaBlendOption name, e.g. \"Linear\", \"Cubic\", \"HermiteCubic\"" },
+                            "automatic_rule": { "type": "boolean", "description": "bAutomaticRuleBasedOnSequencePlayerInState" },
+                            "automatic_rule_trigger_time": { "type": "number", "description": "Seconds-remaining trigger time for the automatic rule" },
+                            "bidirectional": { "type": "boolean", "description": "Make the transition bidirectional" },
+                            "disabled": { "type": "boolean", "description": "Disable the transition" },
+                            "min_time_before_reentry": { "type": "number", "description": "Minimum time before the source state may be re-entered" }
+                        },
+                        "required": ["action"]
+                    }
+                }
+            },
+            "required": ["blueprint", "operations"]
+        }
+    },
+    {
+        "name": "manage_animation",
+        "description": "Edit animation ASSETS (not Blueprints): montages, anim composites, anim sequences, and blend spaces. Create the asset first with create_asset, then batch operations here. Operations run in order; each returns its own success/error. Mutations mark the package dirty.\n\nUse {\"asset\": \"/Game/Anim/AM_Attack\", \"operations\": [{\"action\": \"get\"}]} to READ structure first.\n\n## Montage actions (asset_type AnimMontage)\n- add_slot_track {slot_name}: add a slot animation track (registered on the skeleton).\n- add_segment {animation, slot?, start_time?, end_time?, play_rate?, loop_count?, insert_at?}: append a UAnimSequence segment to a slot (default slot = first/\"DefaultSlot\"), chaining StartPos so the timeline stays contiguous. start_time/end_time clip the source.\n- remove_segment {slot, index}\n- add_section {name, start_time, next_section?}: named montage section; next_section sets the loop/branch target.\n- set_section_next {section, next_section}: set/clear (\"\" or null clears) a section's NextSectionName.\n- remove_section {name}\n- set_sync_group {group, slot_index?}: montage SyncGroup + SyncSlotIndex.\n\n## Notify actions (AnimSequence OR AnimMontage)\n- add_notify {time, name?, notify_class?, duration?, track?}: a named (skeleton) notify if 'name' given (registered on the skeleton); or a class-based notify/notify-state if 'notify_class' given. duration>0 makes a notify STATE. track is the notify track index (created if needed).\n- remove_notify {name?, index?, time?}: by index, or by name (optionally near time).\n\n## Blend space actions (BlendSpace / BlendSpace1D / aim offsets)\n- set_axis {axis: \"x\"|\"y\", name, min, max, grid_divisions?, snap?, wrap?}: configure an axis (y invalid on 1D types).\n- add_sample {animation, x, y?}: place a UAnimSequence sample at (x[,y]).\n- edit_sample {index, x, y?}: move an existing sample.\n- remove_sample {index}\n\n## get (any anim asset)\n- get: returns compact structure — montage slots/segments/sections/sync, blend space axes/samples, or sequence summary (length, frames, skeleton, curves, notifies).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "asset": { "type": "string", "description": "Path to the animation asset (montage, composite, sequence, or blend space), e.g. /Game/Anim/AM_Attack." },
+                "operations": {
+                    "type": "array",
+                    "description": "Operations to apply in order. Use a single {\"action\":\"get\"} to read structure.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "action": { "type": "string", "enum": ["get", "add_slot_track", "add_segment", "remove_segment", "add_section", "set_section_next", "remove_section", "set_sync_group", "add_notify", "remove_notify", "set_axis", "add_sample", "edit_sample", "remove_sample"] },
+                            "slot_name": { "type": "string", "description": "add_slot_track: new slot name" },
+                            "slot": { "type": "string", "description": "Montage slot to target (add_segment/remove_segment)" },
+                            "animation": { "type": "string", "description": "Path to a UAnimSequence (add_segment / add_sample)" },
+                            "start_time": { "type": "number" },
+                            "end_time": { "type": "number" },
+                            "play_rate": { "type": "number", "default": 1.0 },
+                            "loop_count": { "type": "integer", "default": 1 },
+                            "insert_at": { "type": "integer", "description": "Segment insert index (default append)" },
+                            "index": { "type": "integer", "description": "Segment / sample / notify index" },
+                            "name": { "type": "string", "description": "Section name, or named-notify name" },
+                            "next_section": { "type": ["string", "null"], "description": "Section to branch/loop to (\"\" or null clears)" },
+                            "section": { "type": "string", "description": "set_section_next: the section to modify" },
+                            "group": { "type": "string", "description": "set_sync_group: SyncGroup name" },
+                            "slot_index": { "type": "integer", "description": "set_sync_group: SyncSlotIndex" },
+                            "time": { "type": "number", "description": "Notify trigger time (seconds)" },
+                            "notify_class": { "type": "string", "description": "A UAnimNotify or UAnimNotifyState class name/path" },
+                            "duration": { "type": "number", "description": ">0 makes a notify state" },
+                            "track": { "type": "integer", "description": "Notify track index" },
+                            "axis": { "type": "string", "enum": ["x", "y"] },
+                            "min": { "type": "number" },
+                            "max": { "type": "number" },
+                            "grid_divisions": { "type": "integer" },
+                            "snap": { "type": "boolean" },
+                            "wrap": { "type": "boolean" },
+                            "x": { "type": "number" },
+                            "y": { "type": "number" }
+                        },
+                        "required": ["action"]
+                    }
+                }
+            },
+            "required": ["asset", "operations"]
+        }
+    }
+]

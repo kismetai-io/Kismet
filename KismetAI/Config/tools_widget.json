@@ -1,0 +1,52 @@
+[
+  {
+    "name": "read_widget",
+    "description": "Inspect a Widget Blueprint's Designer layout — the visual widget tree, NOT the event graph. A Widget Blueprint has two sides: the Designer hierarchy (a tree of UWidget panels and controls, each living in a parent's slot) and an ordinary K2 event graph. This tool reads the Designer side; read the event graph with the normal read_blueprint tool (a Widget Blueprint's graphs work like any other Blueprint).\n\nModes:\n- tree (default): the full widget hierarchy from the root down. Each node reports its widget name, class (short, e.g. \"Button\", \"TextBlock\", \"VerticalBox\"), whether it is exposed as a variable (is_variable), its slot layout (the parent panel decides the slot type and its key properties — CanvasPanel slots carry position/size/anchors/alignment/z_order, box slots carry padding/size_rule/fill/alignment, grid slots carry row/column/spans), and its children. A few widget types include a cheap summary prop (a TextBlock reports its text). Widgets not reachable from the root are listed separately under \"orphaned\". The widget NAMES are the ids you reference when editing.\n- overview: class-level info — parent class, root widget class, widget count, the variable widgets, animations, property bindings, and named slots. Use this to get the lay of the land before reading the full tree.\n\nWidget names are the ids to reference when editing the layout. The event graph (OnClicked handlers, SetText calls, etc.) is read and edited with read_blueprint / insert_node / edit_blueprint, passing the Widget Blueprint's asset path as 'blueprint'.\n\nReturns asset_revision: an opaque revision of the whole Blueprint package, including all graphs and Designer content. Pass the latest token as expected_revision on subsequent Blueprint or widget mutations. An intervening asset edit, rename, or replacement invalidates the token.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "widget": {
+          "type": "string",
+          "description": "Asset path of the Widget Blueprint (e.g. \"/Game/UI/WBP_MainMenu\")."
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["tree", "overview"],
+          "description": "tree = full Designer widget hierarchy with per-widget slot layout; overview = class info, variables, animations, bindings, named slots. Defaults to tree."
+        }
+      },
+      "required": ["widget"]
+    }
+  },
+  {
+    "name": "edit_widget",
+    "description": "Batch-mutate a Widget Blueprint's Designer hierarchy (the visual widget tree), then recompile and return the resulting tree. This edits the Designer side; wire the event graph (OnClicked handlers, SetText, etc.) with edit_blueprint/insert_node on the same asset path. Reference widgets by the NAMES read_widget reports. Workflow: read_widget(mode=\"tree\") to see the current hierarchy, then send a batch of operations here. Each operation gets its own per-op result {success, error_code?, message?}; a failing op does NOT abort the batch (operations_succeeded/operations_failed count the outcome). The response includes compile_messages, editor_open, and a 'tree' readback (same shape as read_widget tree) so you can verify without re-reading.\n\nOperations (array, applied in order):\n- {\"action\":\"add_widget\",\"class\":\"<WidgetClass>\",\"name\":\"<optional>\",\"parent\":\"<optional parent name>\",\"index\":<optional>,\"is_variable\":<optional bool>} — construct a widget. class is a short name (\"TextBlock\", \"Button\", \"VerticalBox\", \"CanvasPanel\"...) or a Widget Blueprint asset path. If the tree has NO root yet and no parent is given, the new widget becomes the ROOT. Otherwise parent must name a panel widget (CanvasPanel/VerticalBox/HorizontalBox/Overlay/Grid/Border...) that can accept another child; the widget is appended (or inserted at index). Set is_variable:true for widgets the event graph needs to reference. Omit name to auto-name like the Designer. Returns the new widget's name + slot_class.\n- {\"action\":\"remove_widget\",\"name\":\"<name>\"} — delete a widget (and its subtree). If the widget is referenced by graph variable get/set nodes, those references are reported in the per-op result's graph_references so you can fix or remove the orphaned nodes.\n- {\"action\":\"reparent_widget\",\"name\":\"<name>\",\"new_parent\":\"<panel name>\",\"index\":<optional>} — move a widget under a different panel. NOTE: the slot layout RESETS to the new parent slot type's defaults (a CanvasPanelSlot's position/size do not carry over to a VerticalBoxSlot) — re-apply layout with set_slot_property afterward.\n- {\"action\":\"set_slot_property\",\"name\":\"<name>\",\"properties\":{...}} — set layout on the widget's slot, keyed by the SAME names read_widget emits. CanvasPanelSlot: position [x,y], size [w,h], anchors [minX,minY,maxX,maxY], alignment [x,y], auto_size (bool), z_order (int). HorizontalBoxSlot/VerticalBoxSlot: padding [l,t,r,b], size_rule (\"Auto\"|\"Fill\"), fill (number), h_align (\"Left\"|\"Center\"|\"Right\"|\"Fill\"), v_align (\"Top\"|\"Center\"|\"Bottom\"|\"Fill\"). GridSlot: row, column, row_span, column_span (ints). OverlaySlot/BorderSlot: padding, h_align, v_align. An unknown property for that slot type fails the op and lists the valid names.\n- {\"action\":\"set_widget_property\",\"name\":\"<name>\",\"properties\":{\"PropName\":\"<UE text value>\", ...}} — set properties on the widget itself. Property names are the C++ UPROPERTY names (e.g. \"Text\", \"ColorAndOpacity\", \"bIsEnabled\"); values use UE text-import format. Unknown property names are reported per-op (the valid ones still apply).\n- {\"action\":\"rename_widget\",\"name\":\"<name>\",\"new_name\":\"<new>\"} — rename a widget; updates property/animation bindings and graph variable references so existing wiring follows the rename.\n- {\"action\":\"replace_widget\",\"name\":\"<name>\",\"class\":\"<WidgetClass>\"} — swap a widget for a different class, keeping its name and tree position (and graph references when the classes are compatible).\n\nRecompiles automatically and returns compile_messages (errors/warnings). Always check the returned tree + compile result.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "expected_revision": {"type": "string", "description": "Copy the latest asset_revision returned for this Blueprint package by a read or completed operation. The token covers the whole asset, including all graphs and the widget Designer, and is checked before mutation. On a revision conflict, reread the asset and replan; never retry the old operation automatically."},
+        "widget": { "type": "string", "description": "Asset path of the Widget Blueprint to edit." },
+        "operations": {
+          "type": "array",
+          "description": "Ordered list of Designer mutation operations.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "action": { "type": "string", "enum": ["add_widget", "remove_widget", "reparent_widget", "set_slot_property", "set_widget_property", "rename_widget", "replace_widget"] },
+              "class": { "type": "string", "description": "Widget class short name or asset path (add_widget / replace_widget)." },
+              "name": { "type": "string", "description": "Target widget name (the id from read_widget)." },
+              "new_name": { "type": "string", "description": "New name for rename_widget." },
+              "parent": { "type": "string", "description": "Parent panel widget name for add_widget." },
+              "new_parent": { "type": "string", "description": "Destination panel widget name for reparent_widget." },
+              "index": { "type": "integer", "description": "Insertion index within the parent (add_widget / reparent_widget)." },
+              "is_variable": { "type": "boolean", "description": "Expose the new widget as a variable (add_widget)." },
+              "properties": { "type": "object", "description": "Property map for set_slot_property / set_widget_property." }
+            },
+            "required": ["action"]
+          }
+        }
+      },
+      "required": ["widget", "operations"]
+    }
+  }
+]

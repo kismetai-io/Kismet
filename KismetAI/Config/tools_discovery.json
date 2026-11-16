@@ -1,0 +1,88 @@
+[
+    {
+        "name": "inspect_class",
+        "description": "Inspect a UClass to see its Blueprint-visible properties and callable functions with pin-compatible type info. Essential for working with custom C++ or Blueprint classes.\n\nExamples:\n- Native class: {\"class_name\": \"Character\"}\n- Blueprint class: {\"class_name\": \"/Game/BP_Enemy\"}\n- Functions only: {\"class_name\": \"GameplayStatics\", \"filter\": \"functions\"}\n- Search members: {\"class_name\": \"Character\", \"query\": \"jump\"}\n- With inherited: {\"class_name\": \"Character\", \"include_inherited\": true, \"query\": \"movement\"}",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "class_name": {
+                    "type": "string",
+                    "description": "Short name (Character, PlayerController), full path (/Script/Engine.Actor), or Blueprint path (/Game/BP_Enemy)"
+                },
+                "filter": {
+                    "type": "string",
+                    "enum": [
+                        "all",
+                        "properties",
+                        "functions"
+                    ],
+                    "default": "all",
+                    "description": "What to include in results"
+                },
+                "include_inherited": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Include members from parent classes (can be verbose)"
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Filter by UPROPERTY/UFUNCTION category metadata"
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Filter members by name substring (case-insensitive)"
+                },
+                "limit": {
+                    "type": "integer",
+                    "default": 30,
+                    "description": "Maximum members to return per section (1-100)"
+                }
+            },
+            "required": [
+                "class_name"
+            ]
+        }
+    },
+    {
+        "name": "search_nodes",
+        "description": "Search available Blueprint nodes by keyword. Returns node names, function references, and pin signatures for writing correct T3D.\n\nCOVERAGE: this indexes function-call nodes (UBlueprintFunctionNodeSpawner). It does NOT reliably cover macros (ForEachLoop, DoOnce, Gate), conversion/cast nodes, Switch-on-enum, or delegate nodes — an empty result for those is expected, not a sign to keep searching. Stop after one empty result and author the node from the pin knowledge in the system prompt or ask the user.\n\nExamples:\n- {\"query\": \"print string\"}\n- {\"query\": \"line trace\", \"include_pins\": true}\n- {\"query\": \"delay\", \"class\": \"GameplayStatics\"}\n- {\"query\": \"jump\", \"blueprint\": \"/Game/BP_Player\"}\n- {\"query\": \"branch\", \"category\": \"Flow Control\"}\n\nANIM GRAPHS: pass blueprint+graph addressing an animation graph to scope the search to anim nodes (UAnimGraphNode_* class spawners + per-asset \"Play 'X'\" spawners, skeleton-filtered). Without that scope, anim nodes are excluded.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Keyword search (matched against name, keywords, tooltip)"
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Filter by node category (e.g. Math, Physics, AI, Flow Control)"
+                },
+                "class": {
+                    "type": "string",
+                    "description": "Filter to functions on a specific class (e.g. KismetMathLibrary, Character)"
+                },
+                "include_pins": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Include full pin signatures (name, direction, type, default). More verbose but gives exact T3D info."
+                },
+                "limit": {
+                    "type": "integer",
+                    "default": 20,
+                    "description": "Maximum results (1-100)"
+                },
+                "blueprint": {
+                    "type": "string",
+                    "description": "Optional Blueprint asset path. With 'graph', scopes results to that graph (enables anim node listing when it is an animation graph)."
+                },
+                "graph": {
+                    "type": "string",
+                    "description": "Optional graph name/path within 'blueprint'. An animation graph here surfaces anim node spawners."
+                }
+            },
+            "required": [
+                "query"
+            ]
+        }
+    }
+]

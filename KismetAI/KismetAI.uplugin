@@ -1,0 +1,34 @@
+{
+	"FileVersion": 3,
+	"Version": 4,
+	"VersionName": "0.10.0",
+	"FriendlyName": "Kismet",
+	"Description": "Kismet \u2014 AI Blueprint authoring for Unreal Engine",
+	"Category": "Editor",
+	"CreatedBy": "Artem Tarasov",
+	"CreatedByURL": "https://kismetai.io",
+	"DocsURL": "https://kismetai.io/docs",
+	"MarketplaceURL": "",
+	"SupportURL": "https://kismetai.io/support",
+	"CanContainContent": false,
+	"IsBetaVersion": false,
+	"Installed": true,
+	"EnabledByDefault": true,
+	"Modules": [
+		{
+			"Name": "KismetLayoutCore",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "KismetAIRuntime",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "KismetAI",
+			"Type": "Editor",
+			"LoadingPhase": "PostEngineInit"
+		}
+	]
+}
