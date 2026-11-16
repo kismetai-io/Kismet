@@ -1,1 +1,4 @@
 .DS_Store
+
+# Written by mcp-publisher login; never commit
+.mcpregistry_*
