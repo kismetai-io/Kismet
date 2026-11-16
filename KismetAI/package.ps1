@@ -402,6 +402,10 @@ function Build-Release {
         ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
     Get-ChildItem -LiteralPath $Staging -Recurse -Directory -Filter '__pycache__' -Force |
         ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
+    # Operating-system folder metadata (Finder, Explorer) never belongs in an archive.
+    Get-ChildItem -LiteralPath $Staging -Recurse -File -Force |
+        Where-Object { $_.Name -in '.DS_Store', 'Thumbs.db', 'desktop.ini' } |
+        ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
 
     # Patch .modules BuildId
     if (-not $KeepBuildId) {

@@ -19,3 +19,6 @@ Docs/
 
 # Sample skill manifests; held back until the Skills UI ships
 /Examples/
+
+# Written by UAT BuildPlugin on every package build
+/Config/FilterPlugin.ini

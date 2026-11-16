@@ -1,0 +1,13 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.kismetai-io/kismet",
+  "title": "Kismet for Unreal Engine",
+  "description": "Read, edit and compile Unreal Engine Blueprints, materials and widgets in a running editor.",
+  "websiteUrl": "https://kismetai.io/docs/mcp-server",
+  "repository": {
+    "url": "https://github.com/kismetai-io/Kismet",
+    "source": "github",
+    "subfolder": "KismetAI"
+  },
+  "version": "0.10.0"
+}
