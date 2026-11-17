@@ -101,6 +101,7 @@ namespace KismetAIReleaseScenarios
 		}
 		Pkg->SetDirtyFlag(false);
 		Pkg->MarkAsGarbage();
+		KismetAIDisposableContent::ForgetUndoHistory();
 	}
 
 	bool SaveToDisk(UObject* Asset)

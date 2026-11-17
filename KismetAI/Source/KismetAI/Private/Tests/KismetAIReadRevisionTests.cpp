@@ -56,6 +56,7 @@ namespace KismetAIReadRevisionTest
 				BP->GetOutermost()->SetDirtyFlag(false);
 				BP->MarkAsGarbage();
 			}
+			KismetAIDisposableContent::ForgetUndoHistory();
 		}
 
 		UBlueprint* Create(const TCHAR* Name, UK2Node_CallFunction*& OutPrint)

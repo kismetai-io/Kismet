@@ -15,6 +15,7 @@
 #include "KismetAIToolResult.h"
 #include "KismetAIMutationOutcome.h"
 #include "KismetAIPersistence.h"
+#include "DisposableContent.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "Serialization/JsonReader.h"
@@ -75,6 +76,7 @@ namespace MutationOutcomeTest
 			Pkg->SetDirtyFlag(false);
 			Pkg->MarkAsGarbage();
 		}
+		KismetAIDisposableContent::ForgetUndoHistory();
 	}
 
 	static TSharedPtr<FJsonObject> ParseEnvelope(FString Text)

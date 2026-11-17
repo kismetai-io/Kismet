@@ -27,6 +27,7 @@
 #include "KismetAIMutationIntent.h"
 #include "KismetAIToolExecutor.h"
 #include "ScopedTestGrant.h"
+#include "DisposableContent.h"
 #include "Async/Async.h"
 #include "Async/TaskGraphInterfaces.h"
 #include "BlueprintActionDatabase.h"
@@ -160,6 +161,7 @@ namespace
 			{
 				Package->SetDirtyFlag(false);
 			}
+			KismetAIDisposableContent::ForgetUndoHistory();
 			FPackageName::UnRegisterMountPoint(Mount, Directory);
 			IFileManager::Get().DeleteDirectory(*Directory, false, true);
 		}

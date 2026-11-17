@@ -16,10 +16,13 @@
 //   under a fixed /Game folder, delete that folder's files and every directory
 //   left empty above it, up to Content. Only folders whose name marks them as
 //   test-owned ("KismetAITest", "__Kismet") are ever touched.
+// - ForgetUndoHistory: call after marking a fixture garbage, before the next
+//   garbage collection, so the undo buffer no longer holds it.
 
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Editor.h"
 #include "HAL/FileManager.h"
 #include "HAL/PlatformProcess.h"
 #include "Misc/Guid.h"
@@ -28,6 +31,20 @@
 
 namespace KismetAIDisposableContent
 {
+	// Empty the editor's undo buffer. A fixture edited inside a transaction
+	// (every Blueprint tool opens one) stays referenced by the buffer after it is
+	// marked garbage. On UE 5.6 the next collection then crashes intermittently
+	// in the reachability batcher (SIGSEGV at 0xc in
+	// TReferenceBatcher::DrainValidated); no plugin code is on that stack.
+	// Editor asset deletion (ObjectTools) resets the buffer for the same reason.
+	inline void ForgetUndoHistory()
+	{
+		if (GEditor && !GIsTransacting)
+		{
+			GEditor->ResetTransaction(FText::FromString(TEXT("KismetAI test fixture disposed")));
+		}
+	}
+
 	inline bool IsTestOwnedFolder(const FString& LongFolder)
 	{
 		return LongFolder.StartsWith(TEXT("/Game/"))
