@@ -34,7 +34,11 @@
     engine has no Launcher install to copy an id from (Linux).
 
 .PARAMETER Variant
-    'release', 'dev', or 'both'. Default: both.
+    'release', 'dev', 'both' or 'fab'. Default: both.
+    'fab' writes KismetAI-<PluginVersion>-UE<EngineVersion>-fab.zip: source only,
+    no Binaries/ or Intermediate/, EngineVersion stamped into the .uplugin, for
+    upload to Fab (which compiles it). Needs -EngineVersionOverride or
+    -EnginePath; runs no build. Run once per engine version.
 
 .PARAMETER TargetPlatforms
     One or more UE platform names (Win64, Mac, Linux, Android, ...). Default: Win64.
@@ -86,7 +90,7 @@ param(
 
     [switch]$KeepBuildId,
 
-    [ValidateSet('release', 'dev', 'both')]
+    [ValidateSet('release', 'dev', 'both', 'fab')]
     [string]$Variant = 'both',
 
     [string[]]$TargetPlatforms = @('Win64'),
@@ -139,7 +143,25 @@ if (-not $PluginVersion) { throw "KismetAI.uplugin has no VersionName" }
 
 $IsWin = if ($PSVersionTable.PSVersion.Major -ge 6) { $IsWindows } else { $true }
 
-if ($PrebuiltPackageDir) {
+if ($Variant -eq 'fab') {
+    # Source only: Fab compiles the plugin itself, so no engine is needed here,
+    # only the version the archive is for.
+    if ($PrebuiltPackageDir) { throw '-PrebuiltPackageDir does not apply to -Variant fab.' }
+    if ($EngineVersionOverride) {
+        if ($EngineVersionOverride -notmatch '^\d+\.\d+$') {
+            throw '-EngineVersionOverride must be <Major.Minor>, e.g. 5.9.'
+        }
+        $EngineVersion = $EngineVersionOverride
+    } elseif ($EnginePath) {
+        $BuildVersionPath = Join-Path $EnginePath 'Engine/Build/Build.version'
+        if (-not (Test-Path $BuildVersionPath)) { throw "Can't find $BuildVersionPath - is -EnginePath correct?" }
+        $BuildVersionJson = Get-Content $BuildVersionPath -Raw | ConvertFrom-Json
+        $EngineVersion = "$($BuildVersionJson.MajorVersion).$($BuildVersionJson.MinorVersion)"
+    } else {
+        throw '-Variant fab needs -EngineVersionOverride <Major.Minor> or -EnginePath.'
+    }
+    $UATScript = $null
+} elseif ($PrebuiltPackageDir) {
     # Packaging a build made elsewhere: no engine on this host is involved.
     if ($Variant -ne 'release') { throw '-PrebuiltPackageDir only applies to -Variant release.' }
     if (-not (Test-Path -LiteralPath (Join-Path $PrebuiltPackageDir 'KismetAI.uplugin'))) {
@@ -372,6 +394,105 @@ function Invoke-UatBuildPlugin {
     }
 }
 
+# Install + legal docs ship inside the plugin folder so they follow it when
+# the user moves KismetAI/ into <Project>/Plugins/.
+# The contributor docs live at the repository root, one level above the
+# plugin folder. Ask git for it, since the plugin folder may be reached
+# through a link whose parent is somewhere else.
+function Copy-WrapperDocs {
+    param([string]$Wrapper)
+    $RepoDocsRoot = $null
+    try { $RepoDocsRoot = (& git -C $PluginRoot rev-parse --show-toplevel 2>$null) } catch { }
+    if (-not $RepoDocsRoot) { $RepoDocsRoot = Split-Path $PluginRoot -Parent }
+    $WrapperDocs = @('README.md', 'INSTALL.md', 'LICENSE', 'SERVICE_TERMS.md', 'NOTICE.md', 'CONTRIBUTING.md', 'MAINTAINING.md', 'SECURITY.md')
+    foreach ($doc in $WrapperDocs) {
+        $src = Join-Path $PluginRoot $doc
+        if (-not (Test-Path $src)) { $src = Join-Path $RepoDocsRoot $doc }
+        if (Test-Path $src) {
+            Copy-Item -LiteralPath $src -Destination $Wrapper -Force
+        } else {
+            Write-Warning "$doc not found at $src - archive will ship without it."
+        }
+    }
+}
+
+# Fab submission: source only, one archive per engine version. Fab compiles
+# the plugin for each platform itself, so the archive carries no Binaries/ or
+# Intermediate/, and both Build.cs files are marked Distribution = "fab".
+# Its build is a plain BuildPlugin with no .embed-config marker
+# and no KISMETAI_EMBED_CONFIG, so Config/ is read from disk at runtime;
+# FilterPlugin.ini makes BuildPlugin keep Config/, the notices and the docs in
+# the package it hands to users.
+function Build-Fab {
+    Write-Step "Packaging FAB variant (source only, UE$EngineVersion)"
+    $Staging = Join-Path $OutputDir '.staging-fab'
+    if (Test-Path $Staging) { Remove-Item $Staging -Recurse -Force }
+    $Wrapper = Join-Path $Staging 'KismetAI'
+    New-Item -ItemType Directory -Path $Wrapper -Force | Out-Null
+
+    foreach ($dir in 'Source', 'Config', 'Resources', 'ThirdPartyNotices') {
+        $src = Join-Path $PluginRoot $dir
+        if (-not (Test-Path $src)) { throw "Expected $src for the Fab package" }
+        Copy-Item -LiteralPath $src -Destination (Join-Path $Wrapper $dir) -Recurse -Force
+    }
+    # Build.cs runs embed_config.py if a Shipping/Test build embeds Config/.
+    $ScriptsDir = Join-Path $Wrapper 'Scripts'
+    New-Item -ItemType Directory -Path $ScriptsDir -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $PluginRoot 'Scripts/embed_config.py') -Destination $ScriptsDir -Force
+
+    Get-ChildItem -LiteralPath $Wrapper -Recurse -Directory -Force |
+        Where-Object { $_.Name -in '__pycache__', 'Binaries', 'Intermediate' } |
+        ForEach-Object { if (Test-Path -LiteralPath $_.FullName) { Remove-Item -LiteralPath $_.FullName -Recurse -Force } }
+    Get-ChildItem -LiteralPath $Wrapper -Recurse -File -Force |
+        Where-Object { $_.Name -in '.DS_Store', 'Thumbs.db', 'desktop.ini' -or $_.Extension -eq '.pdb' } |
+        ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
+
+    # Mark the copy as a Fab distribution: both Build.cs files then turn the
+    # self-updater off and leave dev logging out of Epic's Development build.
+    foreach ($rel in 'Source/KismetAI/KismetAI.Build.cs', 'Source/KismetAIRuntime/KismetAIRuntime.Build.cs') {
+        $buildCs = Join-Path $Wrapper $rel
+        $rules = Get-Content -LiteralPath $buildCs -Raw
+        $marker = 'private const string Distribution = "direct";'
+        if (-not $rules.Contains($marker)) { throw "No '$marker' in $rel - cannot mark the Fab build." }
+        Set-Content -LiteralPath $buildCs -Value $rules.Replace($marker, 'private const string Distribution = "fab";') -NoNewline
+    }
+
+    # Fab requires a Content folder in every code plugin. Kismet has no assets,
+    # and an empty folder does not survive zipping, so it holds a note.
+    $ContentDir = Join-Path $Wrapper 'Content'
+    New-Item -ItemType Directory -Path $ContentDir -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $ContentDir 'README.txt') -Encoding UTF8 -Value @(
+        'Kismet is a code plugin and ships no assets.',
+        'This folder exists because Fab requires a Content folder in code plugins.'
+    )
+
+    Copy-WrapperDocs -Wrapper $Wrapper
+    $FilterLines = @(
+        '[FilterPlugin]',
+        '; Files BuildPlugin keeps in the package Fab distributes.',
+        '/Config/...',
+        '/ThirdPartyNotices/...',
+        '/Scripts/embed_config.py'
+    )
+    foreach ($doc in Get-ChildItem -LiteralPath $Wrapper -File -Filter '*.md') { $FilterLines += "/$($doc.Name)" }
+    if (Test-Path (Join-Path $Wrapper 'LICENSE')) { $FilterLines += '/LICENSE' }
+    Set-Content -LiteralPath (Join-Path $Wrapper 'Config/FilterPlugin.ini') -Value ($FilterLines -join "`n") -Encoding UTF8
+
+    # Fab reads the target engine from the descriptor.
+    $DescriptorPath = Join-Path $Wrapper 'KismetAI.uplugin'
+    $json = Get-Content $UPluginPath -Raw | ConvertFrom-Json
+    $json | Add-Member -NotePropertyName EngineVersion -NotePropertyValue "$EngineVersion.0" -Force
+    # The descriptor has to agree with the Content folder above.
+    $json | Add-Member -NotePropertyName CanContainContent -NotePropertyValue $true -Force
+    $json | ConvertTo-Json -Depth 20 | Set-Content -Path $DescriptorPath -Encoding UTF8
+
+    $ZipPath = Join-Path $OutputDir "KismetAI-$PluginVersion-UE$EngineVersion-fab.zip"
+    New-ZipFromStaging -StagingDir $Staging -ZipPath $ZipPath
+    Remove-Item $Staging -Recurse -Force
+    $sizeMB = [math]::Round((Get-Item $ZipPath).Length / 1MB, 2)
+    Write-Host "    -> $ZipPath ($sizeMB MB)" -ForegroundColor Green
+}
+
 function Build-Release {
     $Staging = Join-Path $OutputDir '.staging-release'
     if (Test-Path $Staging) { Remove-Item $Staging -Recurse -Force }
@@ -425,24 +546,7 @@ function Build-Release {
     Get-ChildItem -LiteralPath $Staging -Force |
         Where-Object { $_.FullName -ne $Wrapper } |
         ForEach-Object { Move-Item -LiteralPath $_.FullName -Destination $Wrapper -Force }
-    # Install + legal docs ship inside the plugin folder so they follow it when
-    # the user moves KismetAI/ into <Project>/Plugins/.
-    # The contributor docs live at the repository root, one level above the
-    # plugin folder. Ask git for it, since the plugin folder may be reached
-    # through a link whose parent is somewhere else.
-    $RepoDocsRoot = $null
-    try { $RepoDocsRoot = (& git -C $PluginRoot rev-parse --show-toplevel 2>$null) } catch { }
-    if (-not $RepoDocsRoot) { $RepoDocsRoot = Split-Path $PluginRoot -Parent }
-    $WrapperDocs = @('README.md', 'INSTALL.md', 'LICENSE', 'SERVICE_TERMS.md', 'NOTICE.md', 'CONTRIBUTING.md', 'MAINTAINING.md', 'SECURITY.md')
-    foreach ($doc in $WrapperDocs) {
-        $src = Join-Path $PluginRoot $doc
-        if (-not (Test-Path $src)) { $src = Join-Path $RepoDocsRoot $doc }
-        if (Test-Path $src) {
-            Copy-Item -LiteralPath $src -Destination $Wrapper -Force
-        } else {
-            Write-Warning "$doc not found at $src - archive will ship without it."
-        }
-    }
+    Copy-WrapperDocs -Wrapper $Wrapper
 
     $BaseName = "KismetAI-$PluginVersion-UE$EngineVersion-$PlatformsForName-release"
 
@@ -536,6 +640,7 @@ if ($Variant -in 'release', 'both') {
 }
 Write-Host ""
 
+if ($Variant -eq 'fab')             { Build-Fab }
 if ($Variant -in 'dev', 'both')     { Build-Dev }
 if ($Variant -in 'release', 'both') { Build-Release }
 

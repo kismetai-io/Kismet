@@ -168,3 +168,43 @@ bool FKismetAIUpdaterApplyFailedMoveRestoresCurrent::RunTest(const FString& Para
 	IFileManager::Get().DeleteDirectory(*Scratch, false, /*Tree=*/true);
 	return true;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Distribution policy: a Fab build (KISMETAI_SELF_UPDATE=0) refuses check and
+// install without touching the network; a direct build allows both.
+// ─────────────────────────────────────────────────────────────────────────────
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKismetAIUpdaterDistributionPolicy,
+	"KismetAI.Updater.DistributionPolicy", KismetAIUpdaterTestFlags)
+bool FKismetAIUpdaterDistributionPolicy::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("IsSelfUpdateEnabled follows KISMETAI_SELF_UPDATE"),
+		FKismetAIUpdater::IsSelfUpdateEnabled(), KISMETAI_SELF_UPDATE != 0);
+	TestTrue(TEXT("Disabled message names the Launcher"),
+		FKismetAIUpdater::GetSelfUpdateDisabledMessage().Contains(TEXT("Epic Games Launcher")));
+
+	if (FKismetAIUpdater::IsSelfUpdateEnabled())
+	{
+		return true;
+	}
+
+	bool bCheckReturned = false;
+	FKismetAIUpdater::CheckAsync([this, &bCheckReturned](FKismetAIUpdateInfo Info)
+	{
+		bCheckReturned = true;
+		TestEqual(TEXT("Check reports the Fab reason"),
+			Info.ErrorMessage, FKismetAIUpdater::GetSelfUpdateDisabledMessage());
+		TestFalse(TEXT("Check never offers an update"), Info.bHasUpdate);
+	});
+	TestTrue(TEXT("Check answers synchronously, without a request"), bCheckReturned);
+
+	bool bInstallReturned = false;
+	FKismetAIUpdater::InstallAsync(TEXT("https://example.invalid/KismetAI.zip"),
+		[this, &bInstallReturned](bool bOk, FString Err)
+	{
+		bInstallReturned = true;
+		TestFalse(TEXT("Install is refused"), bOk);
+		TestEqual(TEXT("Install reports the Fab reason"), Err, FKismetAIUpdater::GetSelfUpdateDisabledMessage());
+	});
+	TestTrue(TEXT("Install answers synchronously"), bInstallReturned);
+	return true;
+}

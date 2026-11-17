@@ -55,6 +55,19 @@ DEFINE_LOG_CATEGORY(LogKismetAIUpdater);
 #ifndef KISMETAI_MANIFEST_URL
 #error "KISMETAI_MANIFEST_URL must be defined by KismetAI.Build.cs"
 #endif
+#ifndef KISMETAI_SELF_UPDATE
+#error "KISMETAI_SELF_UPDATE must be defined by KismetAI.Build.cs"
+#endif
+
+bool FKismetAIUpdater::IsSelfUpdateEnabled()
+{
+	return KISMETAI_SELF_UPDATE != 0;
+}
+
+FString FKismetAIUpdater::GetSelfUpdateDisabledMessage()
+{
+	return TEXT("This copy of Kismet was installed from Fab. Update it from the Epic Games Launcher.");
+}
 
 namespace
 {
@@ -164,6 +177,13 @@ void FKismetAIUpdater::CheckAsync(TFunction<void(FKismetAIUpdateInfo)> OnDone)
 	FKismetAIUpdateInfo Seed;
 	TSharedPtr<IPlugin> P = IPluginManager::Get().FindPlugin(TEXT("KismetAI"));
 	Seed.CurrentVersion = P.IsValid() ? P->GetDescriptor().VersionName : FString();
+
+	if (!IsSelfUpdateEnabled())
+	{
+		Seed.ErrorMessage = GetSelfUpdateDisabledMessage();
+		OnDone(MoveTemp(Seed));
+		return;
+	}
 
 	TSharedRef<IHttpRequest> Req = FHttpModule::Get().CreateRequest();
 	Req->SetVerb(TEXT("GET"));
@@ -454,6 +474,12 @@ namespace
 
 void FKismetAIUpdater::InstallAsync(const FString& AssetURL, TFunction<void(bool, FString)> OnDone)
 {
+	if (!IsSelfUpdateEnabled())
+	{
+		OnDone(false, GetSelfUpdateDisabledMessage());
+		return;
+	}
+
 	{
 		FScopeLock Lock(&InstallLock);
 		if (bInstallInProgress)

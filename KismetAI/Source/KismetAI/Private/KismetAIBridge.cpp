@@ -1267,6 +1267,9 @@ void UKismetAIBridge::InstallUpdate(const FString& AssetURL)
 
 void UKismetAIBridge::AutoCheckForUpdate()
 {
+	// A Fab copy is updated by the Epic Games Launcher: no launch-time check
+	// and no banner. A manual /update still explains why.
+	if (!FKismetAIUpdater::IsSelfUpdateEnabled()) return;
 	static bool bAlreadyChecked = false;
 	if (bAlreadyChecked) return;
 	bAlreadyChecked = true;

@@ -20,6 +20,14 @@ using UnrealBuildTool;
 // which depends on this module. Never the reverse.
 public class KismetAIRuntime : ModuleRules
 {
+	// Which channel this copy is distributed through. package.ps1 -Variant fab
+	// rewrites "direct" to "fab" in the staged copy, the only place it changes.
+	// A Fab copy is built by Epic in Development and updated by the Epic Games
+	// Launcher: the self-updater refuses to run and dev logging is off unless
+	// KISMETAI_DEV_LOGGING=1 asks for it.
+	private const string Distribution = "direct";
+	private static bool IsFabDistribution { get { return Distribution == "fab"; } }
+
 	public KismetAIRuntime(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
@@ -99,9 +107,10 @@ public class KismetAIRuntime : ModuleRules
 	private void ConfigureDevLogging(ReadOnlyTargetRules Target)
 	{
 		bool bDevLogging =
-			Target.Configuration == UnrealTargetConfiguration.Debug
-			|| Target.Configuration == UnrealTargetConfiguration.DebugGame
-			|| Target.Configuration == UnrealTargetConfiguration.Development;
+			!IsFabDistribution
+			&& (Target.Configuration == UnrealTargetConfiguration.Debug
+				|| Target.Configuration == UnrealTargetConfiguration.DebugGame
+				|| Target.Configuration == UnrealTargetConfiguration.Development);
 
 		string Override = Environment.GetEnvironmentVariable("KISMETAI_DEV_LOGGING");
 		if (!string.IsNullOrEmpty(Override))

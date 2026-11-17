@@ -45,6 +45,14 @@ public:
 	 *  Game thread. Re-entry is rejected (returns immediate failure). */
 	static void InstallAsync(const FString& AssetURL, TFunction<void(bool, FString)> OnDone);
 
+	/** False in a Fab build (KISMETAI_SELF_UPDATE=0): the Epic Games Launcher
+	 *  owns updates there, so CheckAsync and InstallAsync refuse without any
+	 *  network request and the launch-time check is skipped. */
+	static bool IsSelfUpdateEnabled();
+
+	/** User-facing reason CheckAsync/InstallAsync give when self-update is off. */
+	static FString GetSelfUpdateDisabledMessage();
+
 	/** Restart the editor preserving the current project. Asks for unsaved-work
 	 *  confirmation via UnrealEdMisc. Game thread only. */
 	static void RestartEditor();
