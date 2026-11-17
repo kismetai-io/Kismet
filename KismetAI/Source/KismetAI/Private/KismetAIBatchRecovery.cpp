@@ -39,12 +39,18 @@ namespace KismetAIBatchRecovery
 		// the PostEditUndo that performs the rollback — so they never compare
 		// equal across an edit and its undo. They identify compiled shader maps
 		// and lighting caches, not authored state (Material.cpp CreateGuid(StateId),
-		// MaterialInterface.h SetLightingGuid).
+		// MaterialInterface.h SetLightingGuid). bCanMaskedBeAssumedOpaque is
+		// derived from the opacity mask; UE 5.7 recomputes it in
+		// UMaterial::PostEditChangeProperty, so an undo can change it from its
+		// loaded value. It is not authored state either.
 		bool IsRegeneratedCacheKey(const UObject* Object, const FProperty* Prop)
 		{
 			static const FName StateId(TEXT("StateId"));
 			static const FName LightingGuid(TEXT("LightingGuid"));
-			return Object->IsA<UMaterialInterface>() && (Prop->GetFName() == StateId || Prop->GetFName() == LightingGuid);
+			static const FName CanMaskedBeAssumedOpaque(TEXT("bCanMaskedBeAssumedOpaque"));
+			const FName Name = Prop->GetFName();
+			return Object->IsA<UMaterialInterface>()
+				&& (Name == StateId || Name == LightingGuid || Name == CanMaskedBeAssumedOpaque);
 		}
 
 		// Every non-transient, non-deprecated property as exported text. Object

@@ -36,12 +36,14 @@ namespace KismetAIAssetState
 			static const FName HasCompilerMessage(TEXT("bHasCompilerMessage"));
 			static const FName StateId(TEXT("StateId"));
 			static const FName LightingGuid(TEXT("LightingGuid"));
+			// Derived from the opacity mask and recomputed on PostEditChange in UE 5.7.
+			static const FName CanMaskedBeAssumedOpaque(TEXT("bCanMaskedBeAssumedOpaque"));
 			const FName Name = Prop->GetFName();
 			if (Object->IsA<UEdGraphNode>() && (Name == ErrorType || Name == ErrorMsg || Name == HasCompilerMessage))
 			{
 				return true;
 			}
-			if (Object->IsA<UMaterialInterface>() && (Name == StateId || Name == LightingGuid))
+			if (Object->IsA<UMaterialInterface>() && (Name == StateId || Name == LightingGuid || Name == CanMaskedBeAssumedOpaque))
 			{
 				return true;
 			}
