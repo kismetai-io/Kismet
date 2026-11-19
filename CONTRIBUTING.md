@@ -24,8 +24,10 @@ notices and identify code copied or adapted from elsewhere.
   merged, so the title should describe the change.
 - Rebase on `main` if it has moved; do not merge `main` into your branch.
 - Each pull request runs static checks (`python3 .github/scripts/static_checks.py`
-  runs most of them locally). They do not compile the plugin or run its tests:
-  build and run the automation tests yourself, as described below.
+  runs most of them locally). Pull requests from branches in this repository also
+  compile and package the plugin for Windows and Mac and run both automation
+  suites. Fork pull requests run static checks only; contributors must build and
+  test locally. See [Unreal CI](docs/unreal-ci.md) for runners and maintenance.
 - Releases are tags on `main` (`v<version>`). Do not target a `release/...`
   branch unless a maintainer asks for a fix to be backported.
 
