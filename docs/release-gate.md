@@ -2,25 +2,34 @@
 
 A push to main prepares one draft per plugin version after all eight build/test
 jobs pass: UE 5.6, 5.7, 5.8 and 5.9 on Windows and Apple Silicon Mac. The same
-version's later successful build replaces the unpublished draft. Published
-versions are never replaced: bump `KismetAI/KismetAI.uplugin` VersionName first.
-The main-branch release workflow is separate from PR CI. Changes to release
-infrastructure also run the full matrix on same-repository PRs.
+version's draft is frozen to the first candidate commit; later merges skip it.
+New candidate packages require a version bump. Published versions are never
+replaced: bump `KismetAI/KismetAI.uplugin` VersionName first.
+The main-branch release workflow is separate from PR CI. Every same-repository PR also runs the full matrix. Main requires passing
+`Static checks` and `Required CI` on an up-to-date branch. Fork changes must be
+moved to a repository branch to obtain the required engine checks.
 
 Each draft has 16 archives (binary and source variants for every combination)
 and `release-receipt.json` with the source commit, byte sizes and SHA-256 hashes.
-Smoke-test the draft packages, check that its source commit has not changed,
-and publish it as a stable release. Publication verifies the tag and all hashes,
+Wait for the draft job to finish, smoke-test the frozen packages, and publish
+the draft as a stable release. Publishing runs the script from the exact release
+commit and verifies that the receipt and tag identify that same commit. Publication verifies the tag and all hashes,
 uploads the exact archives to R2, verifies the uploaded objects, then inserts
 all eight Supabase release rows, including the published release notes, in one
 transaction. It does not rebuild.
 
-A publish during draft replacement fails validation if the packages and receipt
-are inconsistent. Wait for draft preparation to finish before publishing. A
-promotion failure leaves GitHub published but does not advertise a partial
-matrix in the release catalogue. Retry the failed Actions run after fixing its
-cause. Identical catalogue rows are accepted on retry; different existing rows
-fail. R2 objects use version/hash/name keys and are never overwritten.
+Later merges never edit a draft's body, target commit or existing assets. If an
+upload is interrupted, rerun the failed draft job with its original artifacts.
+It verifies existing bytes and uploads only missing files, with the receipt last.
+Different bytes fail rather than overwrite anything. If the original artifacts
+have expired, bump the version and create a new candidate. Do not delete or
+manually replace candidate assets after smoke testing.
+
+Publishing before upload completion fails receipt validation. A promotion failure
+leaves GitHub published but does not advertise a partial catalogue matrix.
+Retry the failed publishing run after fixing its cause. Identical catalogue rows
+are accepted on retry; different existing rows fail. R2 objects use
+version/hash/name keys and are never overwritten.
 
 Evals, database migrations, Edge Function deployments, Discord announcements
 and MCP Registry publication are not run by this gate. MCP Registry retains

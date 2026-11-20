@@ -71,10 +71,10 @@ def prepare():
     import os
     version = validate_version(json.loads(Path('KismetAI/KismetAI.uplugin').read_text())['VersionName'])
     release = current_release(os.environ['GITHUB_REPOSITORY'], version)
-    eligible = release is None or release['draft']
+    eligible = release is None
     with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
         out.write(f'version={version}\neligible={str(eligible).lower()}\n')
-    print(f'Version {version}: ' + ('prepare candidate' if eligible else 'already published; bump the plugin version for a new release'))
+    print(f'Version {version}: ' + ('prepare candidate' if eligible else 'version already has a frozen draft or published release; bump the plugin version for a new candidate'))
 
 
 def draft(root, version, commit):
@@ -83,15 +83,17 @@ def draft(root, version, commit):
     repo = os.environ['GITHUB_REPOSITORY']
     # A newer merge must not be replaced by an older build finishing later.
     latest = github(f'repos/{repo}/git/ref/heads/main')['object']['sha']
-    if latest != commit:
+    release = current_release(repo, version)
+    if latest != commit and release is None:
         print('A newer main commit exists; this candidate is superseded')
         return
     receipt = inventory(root, version, commit)
     receipt_path = root / 'release-receipt.json'
     receipt_path.write_text(json.dumps(receipt, indent=2) + '\n')
-    release = current_release(repo, version)
     if release and not release['draft']:
         raise ValueError('Published versions are immutable')
+    if release and release['target_commitish'] != commit:
+        raise ValueError('This version is frozen to another commit; bump the version')
     # A published tag must never be moved to a different candidate.
     tag = github(f'repos/{repo}/git/ref/tags/v{version}')
     if tag is not None:
@@ -101,20 +103,40 @@ def draft(root, version, commit):
             '**Smoke testing:** download the packages below and record your findings before publishing. '
             'Publishing promotes these exact packages to the download service and release catalogue. '
             'Evals and backend deployment are not part of this gate.\n\n'
-            'A later successful merge with this version can replace this unpublished draft; '
-            'check the source commit and checksums again before publishing.')
+            'This candidate is frozen to its source commit. Later merges do not replace it; '
+            'new packages require a version bump.')
     data = {'tag_name': f'v{version}', 'target_commitish': commit,
             'name': f'Kismet {version}', 'body': body, 'draft': True}
     if release:
         release_id = release['id']
-        github(f'repos/{repo}/releases/{release_id}', 'PATCH', data)
     else:
         release_id = github(f'repos/{repo}/releases', 'POST', data)['id']
-    for asset in [root / a['name'] for a in receipt['assets']] + [receipt_path]:
-        if not github(f'repos/{repo}/releases/{release_id}')['draft']:
-            raise ValueError('Draft was published during replacement; promotion must validate its receipt')
+    paths = [root / a['name'] for a in receipt['assets']] + [receipt_path]
+    expected = {p.name for p in paths}
+    remote = github(f'repos/{repo}/releases/{release_id}')
+    existing_names = {a['name'] for a in remote['assets']}
+    if existing_names - expected:
+        raise ValueError('Frozen draft has unexpected assets')
+    # Resume interrupted uploads without changing any bytes already available for testing.
+    import tempfile
+    with tempfile.TemporaryDirectory() as temporary:
+        for asset in paths:
+            if asset.name not in existing_names:
+                continue
+            subprocess.run(['gh', 'release', 'download', f'v{version}', '--repo', repo,
+                            '--pattern', asset.name, '--dir', temporary], check=True)
+            if (Path(temporary) / asset.name).read_bytes() != asset.read_bytes():
+                raise ValueError(f'Frozen draft asset differs: {asset.name}')
+    for asset in paths:
+        state = github(f'repos/{repo}/releases/{release_id}')
+        if not state['draft']:
+            raise ValueError('Draft was published during upload; promotion must validate its receipt')
+        if state['target_commitish'] != commit:
+            raise ValueError('Frozen draft source commit changed')
+        if asset.name in existing_names:
+            continue
         subprocess.run(['gh', 'release', 'upload', f'v{version}', '--repo', repo,
-                        '--clobber', str(asset)], check=True)
+                        str(asset)], check=True)
     remote = github(f'repos/{repo}/releases/{release_id}')
     expected = {a['name'] for a in receipt['assets']} | {'release-receipt.json'}
     if {a['name'] for a in remote['assets']} != expected:
@@ -130,6 +152,8 @@ def validate_published(root):
         raise ValueError('Only published stable releases may reach the stable catalogue')
     receipt = json.loads((root / 'release-receipt.json').read_text())
     verify(root, receipt)
+    if os.environ['GITHUB_SHA'] != receipt['commit']:
+        raise ValueError('Publishing commit does not match the smoke-tested source commit')
     if release['tag_name'] != 'v' + receipt['version']:
         raise ValueError('Release tag and package version differ')
     repo = os.environ['GITHUB_REPOSITORY']

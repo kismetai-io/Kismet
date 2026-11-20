@@ -1,55 +1,41 @@
 # Unreal pull-request CI
 
-Pull requests from branches inside `kismetai-io/Kismet` compile, package and test
-Kismet with Unreal Engine 5.8.4 on `windows-2022` (Win64) and `macos-26` (arm64).
-Both jobs start in parallel. New commits cancel superseded runs for that PR.
-This PR workflow has no push or scheduled triggers. Fork PRs run static checks
-only. The separate [draft release gate](release-gate.md) builds the full engine
-matrix on main and when release infrastructure changes.
+Every pull request from a branch inside `kismetai-io/Kismet` builds and tests
+Unreal Engine 5.6–5.9 on Windows and Apple Silicon Mac: eight parallel jobs.
+New commits cancel superseded PR runs. Main requires `Static checks` and
+`Required CI` on an up-to-date branch. The latter succeeds only when every
+matrix job succeeds; failed, cancelled and skipped builds cannot satisfy it.
+Forks receive static checks but must be moved to a repository branch before
+merging because engine-manifest secrets are unavailable to forks.
 
-Each job builds the Editor, Development and Shipping configurations through
+Each job packages Editor, Development and Shipping configurations using
 `KismetAI/package.ps1`, then runs `KismetAI` and `KismetLayoutCore` automation
-from the packaged source archive. A failed, unrun or incomplete test suite fails
-the job. Packages, checksums and test reports are retained for three days.
+from the source package. Failed, unrun or incomplete suites fail the job.
+Packages, checksums and test reports are retained for seven days.
+
+The [draft release gate](release-gate.md) uses the same matrix after merging an
+unpublished plugin version. Evals are not enabled by either workflow.
 
 ## Runner settings
 
-Unity compilation stays enabled for clean checkouts, all logical CPU cores are
-available to UnrealBuildTool, and Unreal's default local UBA executor is retained.
-These were the fastest successful settings in the hosted-runner experiment:
-Windows packaging took 3m58s and Mac packaging took 6m44s, excluding engine setup.
-Full jobs also download and verify about 26 GiB (Windows) or 38 GiB (Mac).
-No engine cache is uploaded to GitHub.
+Unity compilation, all logical cores and Unreal's default local UBA executor
+remain enabled. Downloads use eight workers and a 2 GiB shared buffer. Every
+selected engine file is hash-checked. No engine cache is uploaded to GitHub.
 
-The engine download excludes other platforms, symbols, samples, templates and
-extras. Runtime content stays because automation needs it. Downloads use eight
-workers and a 1 GiB shared buffer; every regular file is hash-checked before use.
-Mac runs `UnrealEditor-Cmd` with `-skipminspeccheck -buildmachine` to avoid hardware
-advisory dialogs on the 7 GiB runner. Each job has a 60-minute timeout; the test
-process has a 10-minute timeout.
+The download excludes other platforms, symbols, samples, templates and extras.
+Runtime content stays because automation needs it. Mac runs `UnrealEditor-Cmd`
+with `-skipminspeccheck -buildmachine` to avoid the 8 GiB advisory dialog on
+7 GiB runners. Jobs have a 90-minute limit; automation has a 10-minute limit.
 
 ## Engine manifest maintenance
 
-`.github/engine-manifests/ue-5.8.4/` contains AES-256-GCM encrypted, trimmed Epic
-installation manifests, not engine binaries or account credentials. The 32-byte
-hex key lives only in the repository Actions secret `UE_MANIFEST_KEY`. Authentication
-is checked before a decrypted manifest is written to the runner's temporary disk.
-The key is exposed only to the decryption step, and checkout does not retain GitHub
-credentials. Anyone permitted to run code on a repository branch can access its
-Actions secrets; do not move this job to `pull_request_target` for fork support.
+Eight encrypted manifests live under `.github/engine-manifests/releases/`, with
+repository secret `UE_RELEASE_MANIFEST_KEY`. See [release maintenance](release-gate.md#credentials-and-maintenance)
+for scope and runner versions. The older UE 5.8-only manifests and key are
+retained for older workflow revisions; current PR CI uses the full matrix.
 
-To replace the engine manifests, obtain both installation manifests using an
-Epic account with Unreal access, install `legendary-gl==0.21.1` and
-`pycryptodomex==3.24.2`, and set `UE_MANIFEST_KEY` to a securely generated 32-byte
-hex value without logging or committing it. Prepare each platform with:
-
-```sh
-python .github/scripts/engine_manifest.py /private/Windows.manifest \
-  .github/engine-manifests/ue-5.8.4/Windows.manifest.enc --prepare
-```
-
-Repeat for Mac, update the repository secret and both encrypted files together,
-and run a same-repository PR to verify both builds. Changing Unreal versions also
-requires updating the workflow paths and the test project's engine association.
-Never commit plaintext manifests or the encryption key. Rotate the key and
-replace both encrypted files if access to it is compromised.
+To replace a manifest, obtain its installation metadata through an authorized
+Epic account, install `legendary-gl==0.21.1` and `pycryptodomex==3.24.2`, and use
+`.github/scripts/engine_manifest.py --prepare` with the existing release key.
+Never commit plaintext manifests, keys, account credentials or engine binaries.
+Update all encrypted manifests together when rotating the release key.
