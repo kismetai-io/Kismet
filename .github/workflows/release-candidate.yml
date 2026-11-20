@@ -51,7 +51,7 @@ jobs:
           pattern: release-UE*
           path: release-assets
           merge-multiple: true
-      - name: Create or refresh unpublished draft
+      - name: Create frozen draft or resume its upload
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ needs.version.outputs.version }}

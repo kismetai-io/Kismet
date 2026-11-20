@@ -65,14 +65,35 @@ class DraftSafetyTests(unittest.TestCase):
         from unittest.mock import patch
         from release_gate import draft
         with patch.dict('os.environ', {'GITHUB_REPOSITORY': 'owner/repo'}), \
-             patch('release_gate.github', return_value={'object': {'sha': 'b' * 40}}) as api:
+             patch('release_gate.github', side_effect=[{'object': {'sha': 'b' * 40}}, []]) as api:
             draft(Path('/nonexistent'), '1.2.3', 'a' * 40)
-            self.assertEqual(api.call_count, 1)
+            self.assertEqual(api.call_count, 2)
+
+class CandidateSchedulingTests(unittest.TestCase):
+    def test_existing_draft_does_not_schedule_replacement(self):
+        import os
+        import json
+        from unittest.mock import patch
+        from release_gate import prepare
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'KismetAI').mkdir()
+            (root / 'KismetAI/KismetAI.uplugin').write_text(json.dumps({'VersionName': '1.2.3'}))
+            previous = Path.cwd()
+            try:
+                os.chdir(root)
+                with patch.dict('os.environ', {'GITHUB_REPOSITORY': 'owner/repo', 'GITHUB_OUTPUT': str(root / 'outputs')}), \
+                     patch('release_gate.current_release', return_value={'draft': True}):
+                    prepare()
+                self.assertIn('eligible=false', (root / 'outputs').read_text())
+            finally:
+                os.chdir(previous)
+
 
 class DraftLifecycleTests(unittest.TestCase):
     setUp = ReleaseGateTests.setUp
 
-    def run_draft(self, existing=None, publish_during_upload=False, tag=None):
+    def run_draft(self, existing=None, publish_during_upload=False, tag=None, corrupt_existing=False, latest_commit=None):
         from unittest.mock import patch
         from release_gate import draft
         calls, uploads = [], []
@@ -80,36 +101,56 @@ class DraftLifecycleTests(unittest.TestCase):
         def api(path, method='GET', data=None):
             calls.append((path, method, data))
             if path.endswith('/git/ref/heads/main'):
-                return {'object': {'sha': 'a' * 40}}
+                return {'object': {'sha': latest_commit or 'a' * 40}}
             if '/releases?' in path:
                 return [existing] if existing else []
             if '/git/ref/tags/' in path:
                 return tag
             if method in ('POST', 'PATCH'):
                 return {'id': 42}
-            return {'draft': not (publish_during_upload and uploads),
+            return {'draft': not (publish_during_upload and uploads), 'target_commitish': 'a' * 40,
                     'html_url': 'https://example.invalid/draft',
-                    'assets': [{'name': p.name} for p in uploads]}
+                    'assets': (existing or {}).get('assets', []) + [{'name': p.name} for p in uploads]}
         def upload(command, check):
             self.assertTrue(check)
-            uploads.append(Path(command[-1]))
+            self.assertNotIn('--clobber', command)
+            if command[2] == 'download':
+                name = command[command.index('--pattern') + 1]
+                (Path(command[-1]) / name).write_bytes(b'corrupt' if corrupt_existing else (self.root / name).read_bytes())
+            else:
+                uploads.append(Path(command[-1]))
         with patch.dict('os.environ', {'GITHUB_REPOSITORY': 'owner/repo'}), \
              patch('release_gate.github', side_effect=api), \
              patch('subprocess.run', side_effect=upload):
             draft(self.root, '1.2.3', 'a' * 40)
-        self.assertEqual(len(uploads), 17)
-        self.assertEqual(uploads[-1].name, 'release-receipt.json')
+        self.assertEqual(len(uploads), 17 - len((existing or {}).get('assets', [])))
+        if uploads:
+            self.assertEqual(uploads[-1].name, 'release-receipt.json')
         import json
-        self.assertEqual(json.loads(uploads[-1].read_text()), receipt)
+        self.assertEqual(json.loads((self.root / 'release-receipt.json').read_text()), receipt)
         return calls
 
     def test_create_complete_draft_with_receipt_last(self):
         calls = self.run_draft()
         self.assertEqual([c[1] for c in calls if c[1] != 'GET'], ['POST'])
 
-    def test_replace_existing_draft_for_same_version(self):
-        calls = self.run_draft({'tag_name': 'v1.2.3', 'draft': True, 'id': 42})
-        self.assertEqual([c[1] for c in calls if c[1] != 'GET'], ['PATCH'])
+    def test_draft_from_another_commit_is_frozen(self):
+        with self.assertRaisesRegex(ValueError, 'frozen'):
+            self.run_draft({'tag_name': 'v1.2.3', 'draft': True, 'id': 42, 'target_commitish': 'b' * 40, 'assets': []})
+
+    def test_same_commit_resumes_missing_assets_without_patching_draft(self):
+        existing = {'tag_name': 'v1.2.3', 'draft': True, 'id': 42,
+                    'target_commitish': 'a' * 40,
+                    'assets': [{'name': next(self.root.glob('*.zip')).name}]}
+        calls = self.run_draft(existing, latest_commit='b' * 40)
+        self.assertFalse([c for c in calls if c[1] != 'GET'])
+
+    def test_changed_existing_bytes_are_never_replaced(self):
+        existing = {'tag_name': 'v1.2.3', 'draft': True, 'id': 42,
+                    'target_commitish': 'a' * 40,
+                    'assets': [{'name': next(self.root.glob('*.zip')).name}]}
+        with self.assertRaisesRegex(ValueError, 'Frozen draft asset differs'):
+            self.run_draft(existing, corrupt_existing=True)
 
     def test_published_version_cannot_be_replaced(self):
         with self.assertRaisesRegex(ValueError, 'Published versions are immutable'):
@@ -120,14 +161,14 @@ class DraftLifecycleTests(unittest.TestCase):
             self.run_draft(tag={'object': {'sha': 'b' * 40}})
 
     def test_publication_during_replacement_stops_uploads(self):
-        with self.assertRaisesRegex(ValueError, 'Draft was published during replacement'):
+        with self.assertRaisesRegex(ValueError, 'Draft was published during upload'):
             self.run_draft(publish_during_upload=True)
 
 
 class PublishedReceiptTests(unittest.TestCase):
     setUp = ReleaseGateTests.setUp
 
-    def validate(self, draft=False, prerelease=False, tag='v1.2.3', commit='a' * 40):
+    def validate(self, draft=False, prerelease=False, tag='v1.2.3', commit='a' * 40, publisher_commit='a' * 40):
         import json
         from unittest.mock import patch
         from release_gate import validate_published
@@ -135,9 +176,16 @@ class PublishedReceiptTests(unittest.TestCase):
         (self.root / 'release-receipt.json').write_text(json.dumps(receipt))
         event = self.root / 'event.json'
         event.write_text(json.dumps({'release': {'draft': draft, 'prerelease': prerelease, 'tag_name': tag}}))
-        with patch.dict('os.environ', {'GITHUB_EVENT_PATH': str(event), 'GITHUB_REPOSITORY': 'owner/repo'}), \
+        with patch.dict('os.environ', {'GITHUB_EVENT_PATH': str(event), 'GITHUB_REPOSITORY': 'owner/repo', 'GITHUB_SHA': publisher_commit}), \
              patch('release_gate.github', return_value={'sha': commit}):
             return validate_published(self.root)
+
+    def test_publisher_commit_must_match_receipt(self):
+        from unittest.mock import patch
+        with patch.dict('os.environ', {'GITHUB_SHA': 'b' * 40}):
+            # The event and tag agree but a different publisher checkout must fail.
+            with self.assertRaisesRegex(ValueError, 'Publishing commit'):
+                self.validate(publisher_commit='b' * 40)
 
     def test_published_tag_matches_smoke_tested_source(self):
         self.assertEqual(self.validate()['commit'], 'a' * 40)

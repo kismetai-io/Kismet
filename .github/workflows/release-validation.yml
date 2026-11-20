@@ -2,15 +2,6 @@ name: Validate release matrix
 
 on:
   pull_request:
-    paths:
-      - '.github/workflows/release-*.yml'
-      - '.github/scripts/release_gate.py'
-      - '.github/scripts/test_release_gate.py'
-      - '.github/scripts/runner_engine.py'
-      - '.github/scripts/runner_tests.py'
-      - '.github/scripts/engine_manifest.py'
-      - 'KismetAI/package.ps1'
-      - '.github/engine-manifests/releases/**'
 
 permissions:
   contents: read
@@ -25,3 +16,18 @@ jobs:
     uses: ./.github/workflows/release-builds.yml
     secrets:
       UE_RELEASE_MANIFEST_KEY: ${{ secrets.UE_RELEASE_MANIFEST_KEY }}
+
+  required:
+    name: Required CI
+    needs: build
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every engine and platform to pass
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: |
+          if [ "$BUILD_RESULT" != success ]; then
+            echo "Full matrix did not pass ($BUILD_RESULT). Fork changes must be tested on a repository branch."
+            exit 1
+          fi
