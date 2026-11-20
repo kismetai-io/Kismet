@@ -16,7 +16,7 @@ assert len(archives) == 1, archives
 with zipfile.ZipFile(archives[0]) as archive:
     archive.extractall(plugins)
 uproject = project / 'KismetAutomation.uproject'
-uproject.write_text(json.dumps({'FileVersion': 3, 'EngineAssociation': '5.8',
+uproject.write_text(json.dumps({'FileVersion': 3, 'EngineAssociation': os.environ.get('ENGINE_VERSION', '5.8'),
     'Plugins': [{'Name': 'KismetAI', 'Enabled': True}]}))
 report = packages / 'AutomationReport'
 report.mkdir(exist_ok=True)

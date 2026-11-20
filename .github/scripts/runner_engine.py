@@ -31,6 +31,7 @@ def main():
     parser.add_argument('destination', type=Path)
     parser.add_argument('--analyze', action='store_true')
     parser.add_argument('--with-content', action='store_true')
+    parser.add_argument('--shared-memory-mib', type=int, choices=(1024, 2048), default=1024)
     args = parser.parse_args()
     manifest = Manifest.read_all(args.manifest.read_bytes())
     original = manifest.file_manifest_list.elements
@@ -52,7 +53,7 @@ def main():
             raise RuntimeError('Manifest path escapes destination')
     manager = DLManager(str(args.destination),
                         'https://epicgames-download1.akamaized.net/Builds/UE5/Releases/CloudDir',
-                        {}, max_workers=8, max_shared_memory=1024 * 2**20,
+                        {}, max_workers=8, max_shared_memory=args.shared_memory_mib * 2**20,
                         update_interval=30, dl_timeout=60)
     manager.run_analysis(manifest, resume=False, processing_optimization=True)
     manager.logging_queue = Queue()

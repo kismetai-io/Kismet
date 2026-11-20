@@ -1,0 +1,59 @@
+name: Prepare draft release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-candidate-main
+  cancel-in-progress: true
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      eligible: ${{ steps.version.outputs.eligible }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/release_gate.py prepare
+
+  build:
+    needs: version
+    if: needs.version.outputs.eligible == 'true'
+    uses: ./.github/workflows/release-builds.yml
+    secrets:
+      UE_RELEASE_MANIFEST_KEY: ${{ secrets.UE_RELEASE_MANIFEST_KEY }}
+
+  draft:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release-promotion
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-UE*
+          path: release-assets
+          merge-multiple: true
+      - name: Create or refresh unpublished draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: python3 .github/scripts/release_gate.py draft --version "$RELEASE_VERSION" --commit "$RELEASE_COMMIT"
