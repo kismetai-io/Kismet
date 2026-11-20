@@ -1,0 +1,47 @@
+name: Promote published release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-promotion
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event.release.prerelease == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release-production
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download the published smoke-test packages
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          mkdir release-assets
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir release-assets --pattern '*.zip' --pattern release-receipt.json
+          python .github/scripts/release_gate.py verify-published
+      - name: Install publishing clients
+        run: python -m pip install boto3==1.40.0 'psycopg[binary]==3.2.9'
+      - name: Verify uploads and publish catalogue transaction
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.RELEASE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT_URL: ${{ vars.RELEASE_R2_ENDPOINT_URL }}
+          R2_BUCKET: kismetai-releases
+          RELEASES_BASE_URL: https://releases.kismetai.io
+          RELEASE_DATABASE_URL: ${{ secrets.RELEASE_DATABASE_URL }}
+        run: python .github/scripts/release_gate.py publish
