@@ -3,7 +3,9 @@
 Pull requests from branches inside `kismetai-io/Kismet` compile, package and test
 Kismet with Unreal Engine 5.8.4 on `windows-2022` (Win64) and `macos-26` (arm64).
 Both jobs start in parallel. New commits cancel superseded runs for that PR.
-There are no push or scheduled build triggers. Fork PRs run static checks only.
+This PR workflow has no push or scheduled triggers. Fork PRs run static checks
+only. The separate [draft release gate](release-gate.md) builds the full engine
+matrix on main and when release infrastructure changes.
 
 Each job builds the Editor, Development and Shipping configurations through
 `KismetAI/package.ps1`, then runs `KismetAI` and `KismetLayoutCore` automation

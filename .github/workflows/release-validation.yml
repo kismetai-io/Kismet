@@ -5,6 +5,11 @@ on:
     paths:
       - '.github/workflows/release-*.yml'
       - '.github/scripts/release_gate.py'
+      - '.github/scripts/test_release_gate.py'
+      - '.github/scripts/runner_engine.py'
+      - '.github/scripts/runner_tests.py'
+      - '.github/scripts/engine_manifest.py'
+      - 'KismetAI/package.ps1'
       - '.github/engine-manifests/releases/**'
 
 permissions:

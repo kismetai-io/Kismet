@@ -172,6 +172,7 @@ def publish(root):
             raise ValueError(f'Uploaded object differs: {asset["name"]}')
         locations[asset['name']] = base_url + '/' + key
     assets = {a['name']: a for a in receipt['assets']}
+    notes = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())['release'].get('body') or ''
     with psycopg.connect(os.environ['RELEASE_DATABASE_URL'], sslmode='require') as connection:
         with connection.cursor() as cursor:
             cursor.execute("SELECT pg_advisory_xact_lock(hashtext('kismet-release-publish'))")
@@ -181,7 +182,7 @@ def publish(root):
                     src = name[:-4] + '-src.zip'
                     values = (receipt['version'], 'stable', engine, platform, locations[name],
                               assets[name]['size'], assets[name]['sha256'], locations[src],
-                              assets[src]['size'], assets[src]['sha256'])
+                              assets[src]['size'], assets[src]['sha256'], notes)
                     cursor.execute('SELECT url, sha256, source_url, source_sha256 FROM public.releases WHERE version=%s AND channel=%s AND engine=%s AND platform=%s', values[:4])
                     existing = cursor.fetchone()
                     if existing:
@@ -189,8 +190,8 @@ def publish(root):
                             raise ValueError('Published catalogue version already has different assets')
                         continue
                     cursor.execute('''INSERT INTO public.releases
-                        (version,channel,engine,platform,url,size_bytes,sha256,source_url,source_size_bytes,source_sha256)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''', values)
+                        (version,channel,engine,platform,url,size_bytes,sha256,source_url,source_size_bytes,source_sha256,notes)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''', values)
     print(f'Published {len(assets)} verified packages and eight catalogue rows for {receipt["version"]}')
 
 

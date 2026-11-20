@@ -12,7 +12,8 @@ and `release-receipt.json` with the source commit, byte sizes and SHA-256 hashes
 Smoke-test the draft packages, check that its source commit has not changed,
 and publish it as a stable release. Publication verifies the tag and all hashes,
 uploads the exact archives to R2, verifies the uploaded objects, then inserts
-all eight Supabase release rows in one transaction. It does not rebuild.
+all eight Supabase release rows, including the published release notes, in one
+transaction. It does not rebuild.
 
 A publish during draft replacement fails validation if the packages and receipt
 are inconsistent. Wait for draft preparation to finish before publishing. A
@@ -41,6 +42,9 @@ Configure these in the `release-production` GitHub environment:
 - Secret `RELEASE_DATABASE_URL`: a production Postgres connection limited to
   SELECT and INSERT on `public.releases` and usage of its ID sequence. No schema
   or other application-table write access is needed. The connection requires TLS.
+
+Restrict this environment to version tags (`v*`) using deployment branch/tag
+rules, so branch and PR jobs cannot use publishing credentials.
 
 The download domain is `https://releases.kismetai.io`. The workflow has read-only
 GitHub permissions except for the draft creation job. Publishing the draft is
