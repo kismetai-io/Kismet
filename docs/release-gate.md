@@ -49,3 +49,5 @@ the human approval step; no production update happens when a draft is created.
 UE 5.6 uses macOS 15 and Xcode 16.4 because its supported maximum is Xcode 16.x.
 Other Mac builds use macOS 26. All Windows builds use windows-2022. Unity builds,
 all logical cores and Unreal's default memory scheduling remain enabled.
+Release downloads use a 2 GiB shared buffer; UE 5.7/5.9 Mac manifests exceed the
+1 GiB buffer used by the existing UE 5.8 PR workflow.

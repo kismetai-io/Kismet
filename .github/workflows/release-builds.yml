@@ -90,7 +90,7 @@ jobs:
       - name: Download stripped engine and verify hashes
         shell: pwsh
         run: |
-          python .github/scripts/runner_engine.py '${{ runner.temp }}/manifests/${{ matrix.platform }}.manifest' "$env:UE_ROOT" --with-content
+          python .github/scripts/runner_engine.py '${{ runner.temp }}/manifests/${{ matrix.platform }}.manifest' "$env:UE_ROOT" --with-content --shared-memory-mib 2048
           if ($LASTEXITCODE -ne 0) { throw 'Engine provisioning failed' }
 
       - name: Configure clean-build compilation

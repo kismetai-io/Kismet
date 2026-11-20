@@ -53,9 +53,6 @@ class ReleaseGateTests(unittest.TestCase):
                 validate_version(value)
 
 
-if __name__ == '__main__':
-    unittest.main()
-
 class DraftSafetyTests(unittest.TestCase):
     def test_finds_unpublished_draft(self):
         from unittest.mock import patch
@@ -71,3 +68,36 @@ class DraftSafetyTests(unittest.TestCase):
              patch('release_gate.github', return_value={'object': {'sha': 'b' * 40}}) as api:
             draft(Path('/nonexistent'), '1.2.3', 'a' * 40)
             self.assertEqual(api.call_count, 1)
+
+class PromotionSafetyTests(unittest.TestCase):
+    setUp = ReleaseGateTests.setUp
+
+    def test_catalogue_is_untouched_when_uploaded_bytes_differ(self):
+        import io
+        import types
+        from unittest.mock import MagicMock, patch
+        from release_gate import publish
+        receipt = inventory(self.root, '1.2.3', 'a' * 40)
+        class Body(io.BytesIO):
+            def iter_chunks(self, chunk_size):
+                yield self.read()
+        s3 = MagicMock()
+        s3.get_object.return_value = {'Body': Body(b'corrupt upload')}
+        boto = types.ModuleType('boto3')
+        boto.client = MagicMock(return_value=s3)
+        database = types.ModuleType('psycopg')
+        database.connect = MagicMock()
+        exceptions = types.ModuleType('botocore.exceptions')
+        exceptions.ClientError = type('ClientError', (Exception,), {})
+        with patch.dict('sys.modules', {'boto3': boto, 'psycopg': database,
+                                       'botocore.exceptions': exceptions}), \
+             patch.dict('os.environ', {'RELEASES_BASE_URL': 'https://example.invalid',
+                                       'R2_ENDPOINT_URL': 'https://example.invalid', 'R2_BUCKET': 'test'}), \
+             patch('release_gate.validate_published', return_value=receipt):
+            with self.assertRaisesRegex(ValueError, 'Uploaded object differs'):
+                publish(self.root)
+            database.connect.assert_not_called()
+
+
+if __name__ == '__main__':
+    unittest.main()
