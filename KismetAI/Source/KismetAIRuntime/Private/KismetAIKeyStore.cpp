@@ -20,7 +20,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogKismetAIKeyStore, Log, All);
 
 namespace
 {
-	constexpr int32 BlockSize = 16;
+	constexpr int32 AesBlockSize = 16;
 	constexpr int32 FileSaltSize = 16;
 	constexpr int32 MaxPlaintextLen = 4096;
 
@@ -149,7 +149,7 @@ namespace
 
 		// Plaintext layout pre-encryption: [sentinel][key bytes][PKCS7 padding]
 		const int32 RawLen = 4 + KeyLen;  // sentinel is always 4 bytes
-		const int32 PadLen = BlockSize - (RawLen % BlockSize);
+		const int32 PadLen = AesBlockSize - (RawLen % AesBlockSize);
 		const int32 PaddedLen = RawLen + PadLen;
 
 		TArray<uint8> Buffer;
@@ -200,7 +200,7 @@ namespace
 		}
 
 		const int32 HeaderSize = sizeof(FileMagic) + FileSaltSize;
-		if (FileBytes.Num() < HeaderSize + BlockSize)
+		if (FileBytes.Num() < HeaderSize + AesBlockSize)
 		{
 			return false;
 		}
@@ -209,7 +209,7 @@ namespace
 			return false;
 		}
 		const int32 CipherLen = FileBytes.Num() - HeaderSize;
-		if (CipherLen <= 0 || (CipherLen % BlockSize) != 0)
+		if (CipherLen <= 0 || (CipherLen % AesBlockSize) != 0)
 		{
 			return false;
 		}
@@ -230,7 +230,7 @@ namespace
 			return false;
 		}
 		const uint8 PadLen = Buffer.Last();
-		if (PadLen == 0 || PadLen > BlockSize || (int32)PadLen > Buffer.Num())
+		if (PadLen == 0 || PadLen > AesBlockSize || (int32)PadLen > Buffer.Num())
 		{
 			Wipe(Buffer);
 			return false;
