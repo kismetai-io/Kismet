@@ -24,7 +24,7 @@ notices and identify code copied or adapted from elsewhere.
   merged, so the title should describe the change.
 - Rebase on `main` if it has moved; do not merge `main` into your branch.
 - Each pull request runs static checks (`python3 .github/scripts/static_checks.py`
-  runs most of them locally). Pull requests from branches in this repository also
+  runs most of them locally) and the panel behaviour tests in `tests/ui`. Pull requests from branches in this repository also
   compile and package the plugin for Windows and Mac and run both automation
   suites. Fork pull requests run static checks only; contributors must build and
   test locally. See [Unreal CI](docs/unreal-ci.md) for runners and maintenance.
@@ -40,6 +40,16 @@ Build the host project's Editor target as in [KismetAI/INSTALL.md](KismetAI/INST
   -ExecCmds="Automation RunTests KismetAI" -TestExit="Automation Test Queue Empty" \
   -unattended -nopause -NullRHI -nosplash -nosound
 ```
+
+Changes to the panel page (`KismetAI/Config/ui.html`) or to the bridge
+(`KismetAIBridge.h`) also need the panel behaviour tests, which run without
+Unreal and on every pull request, fork pull requests included:
+
+```sh
+cd tests/ui && npm ci && npx playwright install chromium webkit && npm test
+```
+
+See [tests/ui/README.md](tests/ui/README.md) for the harness and how to add a test.
 
 Windows and Linux support claims require real builds on those platforms.
 The source archive is self-contained; the commands above do not require the
