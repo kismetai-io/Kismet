@@ -73,9 +73,6 @@ test.describe('Send button', () => {
 
 	for (const [text, method, args] of COMMANDS) {
 		test(`runs ${text.split(' ')[0]} locally`, async ({ panel }) => {
-			// KNOWN BUG on main, fixed by kismetai-io/Kismet#6: the button sends
-			// slash commands to the model as chat. Remove test.fail() when #6 lands.
-			test.fail(true, 'Send button bypasses slash-command handling (kismetai-io/Kismet#6)');
 			await clickSend(panel, text);
 			await expect.poll(() => panel.calls(method), { timeout: 1000 }).toEqual([args]);
 			expect(await sentToModel(panel)).toEqual([]);
