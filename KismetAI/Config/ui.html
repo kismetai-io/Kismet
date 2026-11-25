@@ -7900,6 +7900,36 @@ function steerFromComposer() {
 	});
 }
 
+// Run a composer slash command (`/model`, `/provider <id> [model] [url]`, ...)
+// and return true, or return false for text that is a message. Enter and the
+// Send button both call this, so a command is never sent to the model as chat.
+function runComposerCommand(text) {
+	const cmd = COMMANDS.find(c => c.name === text);
+	if (cmd) {
+		executeCommand(cmd);
+		return true;
+	}
+	const inline = [
+		['/model ', function(arg) { switchModelByAlias(arg); }],
+		['/provider ', function(arg) {
+			const parts = arg.split(/\s+/);
+			switchProvider(parts[0] || '', parts[1] || '', parts[2] || '');
+		}],
+		['/effort ', function(arg) { switchEffortLevel(arg); }],
+		['/fastmode ', function(arg) { switchFastMode(arg); }],
+	];
+	for (let i = 0; i < inline.length; i++) {
+		if (text.startsWith(inline[i][0])) {
+			inputEl.value = '';
+			autoResize();
+			hideCommandDropdown();
+			inline[i][1](text.substring(inline[i][0].length).trim());
+			return true;
+		}
+	}
+	return false;
+}
+
 function handleSendOrStop() {
 	if (isAgentRunning) {
 		window.ue.kismetai.abort();
@@ -7907,6 +7937,7 @@ function handleSendOrStop() {
 	}
 	const text = inputEl.value.trim();
 	if (!text) return;
+	if (runComposerCommand(text)) return;
 
 	// Check for API key before sending
 	if (window.ue && window.ue.kismetai) {
@@ -9583,39 +9614,8 @@ inputEl.addEventListener('keydown', function(e) {
 
 	if (e.key === 'Enter' && !e.shiftKey) {
 		e.preventDefault();
-		// Check if input is a slash command
-		const text = inputEl.value.trim();
-		const cmd = COMMANDS.find(c => c.name === text);
-		if (cmd) {
-			executeCommand(cmd);
-		} else if (text.startsWith('/model ')) {
-			// Handle /model <alias> inline
-			const alias = text.substring(7).trim();
-			inputEl.value = '';
-			autoResize();
-			hideCommandDropdown();
-			switchModelByAlias(alias);
-		} else if (text.startsWith('/provider ')) {
-			// /provider <id> [model] [base-url]
-			const parts = text.substring(10).trim().split(/\s+/);
-			inputEl.value = '';
-			autoResize();
-			hideCommandDropdown();
-			switchProvider(parts[0] || '', parts[1] || '', parts[2] || '');
-		} else if (text.startsWith('/effort ')) {
-			// Handle /effort <level> inline
-			const level = text.substring(8).trim();
-			inputEl.value = '';
-			autoResize();
-			hideCommandDropdown();
-			switchEffortLevel(level);
-		} else if (text.startsWith('/fastmode ')) {
-			// Handle /fastmode <on|off> inline
-			const state = text.substring(10).trim();
-			inputEl.value = '';
-			autoResize();
-			hideCommandDropdown();
-			switchFastMode(state);
+		if (runComposerCommand(inputEl.value.trim())) {
+			// Slash command handled locally; nothing goes to the model.
 		} else {
 			// Plain message: behaviour depends on whether the agent is running.
 			if (!isAgentRunning) {
