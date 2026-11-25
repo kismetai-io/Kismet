@@ -1,6 +1,6 @@
 {
 	"schema_version": 1,
-	"_comment": "Provider profiles: where a request goes and how it authenticates. A model's 'provider' in models.json names one of these; a run can also pick a profile explicitly. 'key_slot' names the encrypted key file (~/.kismet/<slot>_key.enc) and the in-memory key; the anthropic/openai/minimax slots are the same files KismetAI has always used. Base URLs: a user override in settings wins, then 'base_url_env', then 'base_url'. Endpoints checked 2026-11-06 against each vendor's docs.",
+	"_comment": "Provider profiles: where a request goes and how it authenticates. A model's 'provider' in models.json names one of these; a run can also pick a profile explicitly. 'key_slot' names the encrypted key file (~/.kismet/<slot>_key.enc) and the in-memory key; the anthropic/openai/minimax slots are the same files KismetAI has always used. Base URLs: a user override in settings wins, then 'base_url_env', then 'base_url'. Endpoints checked 2026-11-06 against each vendor's docs. 'models_url' / 'models_format' name the model list the picker refreshes from at runtime ({base} = resolved base URL, {origin} = its scheme://host); list endpoints checked 2026-11-25. Z.ai and MiniMax publish no documented list, so they keep the curated rows.",
 	"providers": [
 		{
 			"id": "anthropic",
@@ -11,7 +11,10 @@
 			"key_env": "ANTHROPIC_API_KEY",
 			"auth": "x-api-key",
 			"prompt_cache_markers": true,
-			"key_url": "https://platform.claude.com/settings/keys"
+			"key_url": "https://platform.claude.com/settings/keys",
+			"models_url": "{base}/v1/models?limit=1000",
+			"models_format": "anthropic",
+			"models_headers": { "anthropic-version": "2023-06-01" }
 		},
 		{
 			"id": "openai",
@@ -22,7 +25,9 @@
 			"key_slot": "openai",
 			"key_env": "OPENAI_API_KEY",
 			"auth": "bearer",
-			"key_url": "https://platform.openai.com/api-keys"
+			"key_url": "https://platform.openai.com/api-keys",
+			"models_url": "{base}/v1/models",
+			"models_format": "openai"
 		},
 		{
 			"id": "google",
@@ -32,7 +37,11 @@
 			"key_slot": "google",
 			"key_env": "GEMINI_API_KEY",
 			"auth": "bearer",
-			"key_url": "https://aistudio.google.com/apikey"
+			"key_url": "https://aistudio.google.com/apikey",
+			"_comment": "The native list (not the OpenAI-compatible one) reports inputTokenLimit/outputTokenLimit; it takes the key as x-goog-api-key.",
+			"models_url": "{origin}/v1beta/models?pageSize=1000",
+			"models_format": "google",
+			"models_auth": "x-goog-api-key"
 		},
 		{
 			"id": "deepseek",
@@ -42,7 +51,9 @@
 			"key_slot": "deepseek",
 			"key_env": "DEEPSEEK_API_KEY",
 			"auth": "x-api-key+bearer",
-			"key_url": "https://platform.deepseek.com/api_keys"
+			"key_url": "https://platform.deepseek.com/api_keys",
+			"models_url": "{origin}/models",
+			"models_format": "openai"
 		},
 		{
 			"id": "zai",
@@ -62,7 +73,9 @@
 			"key_slot": "moonshot",
 			"key_env": "MOONSHOT_API_KEY",
 			"auth": "x-api-key+bearer",
-			"key_url": "https://platform.kimi.ai/console/api-keys"
+			"key_url": "https://platform.kimi.ai/console/api-keys",
+			"models_url": "{origin}/v1/models",
+			"models_format": "openai"
 		},
 		{
 			"id": "minimax",
@@ -86,7 +99,9 @@
 			"auth": "bearer",
 			"custom_models": true,
 			"extra_headers": { "X-Title": "KismetAI" },
-			"key_url": "https://openrouter.ai/settings/keys"
+			"key_url": "https://openrouter.ai/settings/keys",
+			"models_url": "{base}/models",
+			"models_format": "openrouter"
 		},
 		{
 			"id": "ollama",
@@ -98,7 +113,9 @@
 			"auth": "none",
 			"local": true,
 			"custom_models": true,
-			"system_as_string": true
+			"system_as_string": true,
+			"models_url": "{base}/api/tags",
+			"models_format": "ollama"
 		},
 		{
 			"id": "lmstudio",
@@ -110,7 +127,9 @@
 			"auth": "none",
 			"local": true,
 			"custom_models": true,
-			"system_as_string": true
+			"system_as_string": true,
+			"models_url": "{base}/api/v1/models",
+			"models_format": "lmstudio"
 		},
 		{
 			"id": "custom-anthropic",
@@ -119,7 +138,9 @@
 			"base_url": "",
 			"key_slot": "custom-anthropic",
 			"auth": "x-api-key",
-			"custom_models": true
+			"custom_models": true,
+			"models_url": "{base}/v1/models",
+			"models_format": "openai"
 		},
 		{
 			"id": "custom-openai",
@@ -128,7 +149,10 @@
 			"base_url": "",
 			"key_slot": "custom-openai",
 			"auth": "bearer",
-			"custom_models": true
+			"custom_models": true,
+			"_comment": "The base includes the /v1 prefix (chat goes to {base}/chat/completions), so the list is {base}/models. Covers llama.cpp llama-server and vLLM.",
+			"models_url": "{base}/models",
+			"models_format": "openai"
 		}
 	]
 }

@@ -16,9 +16,11 @@
 #include "CoreMinimal.h"
 #include "KismetAIModelClient.h"
 #include "KismetAILLMProvider.h"
+#include "KismetAIModelDiscovery.h"
 #include "HAL/ThreadSafeBool.h"
 #include "Dom/JsonObject.h"
 #include "Policies/CondensedJsonPrintPolicy.h"
+#include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 
@@ -233,5 +235,70 @@ namespace KismetAIFixtureTransport
 		TArray<FScriptedAttempt> Attempts;
 		int32 Next = 0;
 		FThreadSafeBool bCancelled = false;
+	};
+
+	// IKismetAIHttpFetcher over scripted responses, for the model-list and
+	// local-discovery paths. A URL with no script answers like a server that is
+	// not running (status 0), so "server down" needs no setup.
+	class FFixtureHttpFetcher final : public IKismetAIHttpFetcher
+	{
+	public:
+		FFixtureHttpFetcher& On(const FString& Url, int32 Status, const FString& Body)
+		{
+			FKismetAIHttpResponse Response;
+			Response.Status = Status;
+			Response.Body = Body;
+			Scripted.Add(Url, Response);
+			return *this;
+		}
+
+		// POST /api/show answers by the requested model name.
+		FFixtureHttpFetcher& OnShow(const FString& Url, const FString& Model, const FString& Body)
+		{
+			FKismetAIHttpResponse Response;
+			Response.Status = 200;
+			Response.Body = Body;
+			Shows.Add(Url + TEXT("#") + Model, Response);
+			return *this;
+		}
+
+		virtual FKismetAIHttpResponse Send(const FKismetAIHttpRequest& Request) override
+		{
+			Requests.Add(Request);
+			if (Request.Verb == TEXT("POST"))
+			{
+				TSharedPtr<FJsonObject> Body;
+				FString Model;
+				if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Request.Body), Body) && Body.IsValid())
+				{
+					Body->TryGetStringField(TEXT("model"), Model);
+				}
+				if (const FKismetAIHttpResponse* Show = Shows.Find(Request.Url + TEXT("#") + Model))
+				{
+					return *Show;
+				}
+			}
+			if (const FKismetAIHttpResponse* Found = Scripted.Find(Request.Url))
+			{
+				return *Found;
+			}
+			return FKismetAIHttpResponse();
+		}
+
+		int32 CountRequests(const FString& Url) const
+		{
+			int32 Count = 0;
+			for (const FKismetAIHttpRequest& Request : Requests)
+			{
+				Count += Request.Url == Url ? 1 : 0;
+			}
+			return Count;
+		}
+
+		TArray<FKismetAIHttpRequest> Requests;
+
+	private:
+		TMap<FString, FKismetAIHttpResponse> Scripted;
+		TMap<FString, FKismetAIHttpResponse> Shows;
 	};
 }

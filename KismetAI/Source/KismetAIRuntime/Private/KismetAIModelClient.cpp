@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "KismetAIModelClient.h"
+#include "KismetAIModelDiscovery.h"
 #include "KismetAIProviderProfile.h"
 #include "KismetAIModelCatalog.h"
 #include "KismetAIRequestBudget.h"
@@ -292,6 +293,30 @@ FModelCallOutcome FKismetAICurlModelClient::Call(
 		Unsupported.ErrorMessage = FString::Printf(
 			TEXT("Provider '%s' uses a protocol this build cannot send yet."), *WantedProfile);
 		return Unsupported;
+	}
+
+	// Local and custom servers: say "Ollama not running at <url>" or "this
+	// model has no tool support" before the first request, instead of a
+	// generic transport error or a request that hangs. Once per base URL and
+	// model per client; a run reuses its client.
+	{
+		const FKismetAIProviderProfile& Profile = KismetAIProviders::ResolveProfile(Config);
+		const FString PreflightKey = Profile.Id + TEXT("|") + KismetAIProviders::GetBaseUrl(Config, Profile) + TEXT("|") + Config.Model;
+		if (KismetAIProviders::IsSelfHosted(Profile) && PreflightKey != LastPreflightKey)
+		{
+			FKismetAICurlHttpFetcher Fetcher;
+			FString PreflightType;
+			FString PreflightMessage;
+			if (!KismetAIModelsApi::PreflightLocal(Config, Profile, Fetcher, PreflightType, PreflightMessage))
+			{
+				FModelCallOutcome Refused;
+				Refused.Result = EModelCallResult::FatalError;
+				Refused.ErrorType = PreflightType;
+				Refused.ErrorMessage = PreflightMessage;
+				return Refused;
+			}
+			LastPreflightKey = PreflightKey;
+		}
 	}
 
 	// Build request body via provider (behavior-preserving for Anthropic; parity).

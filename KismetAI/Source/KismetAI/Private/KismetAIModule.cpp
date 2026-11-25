@@ -20,6 +20,8 @@
 #include "KismetAIAgent.h"
 #include "KismetAILLMProvider.h"
 #include "KismetAIProviderProfile.h"
+#include "KismetAIModelRegistry.h"
+#include "Misc/App.h"
 #include "KismetAIUpdater.h"
 #include "KismetAIUtils.h"
 #include "KismetAIPersistence.h"
@@ -532,6 +534,22 @@ void FKismetAIModule::StartupModule()
 	}
 	LoadSettings();
 
+	// Model lists: refresh each provider's Models API and discover local models
+	// on the thread pool. Never blocks startup; a failure keeps the curated
+	// rows. Automation and unattended runs stay on the shipped catalog so tests
+	// and evals see the same models on every machine.
+	{
+		const FKismetAIProviderProfile* Chosen = AgentConfig.ProviderId.IsEmpty() ? nullptr : FKismetAIProviderRegistry::Get().Find(AgentConfig.ProviderId);
+		if (Chosen && KismetAIProviders::IsSelfHosted(*Chosen))
+		{
+			FKismetAIModelRegistry::Get().RegisterTypedModel(AgentConfig, Chosen->Id, AgentConfig.Model);
+		}
+		if (!FApp::IsUnattended() && !GIsAutomationTesting)
+		{
+			FKismetAIModelRegistry::Get().RefreshAllAsync(AgentConfig);
+		}
+	}
+
 	const FString EvalModelEnv = GetEnvString(TEXT("KISMETAI_EVAL_MODEL"));
 	if (!EvalModelEnv.IsEmpty())
 	{
@@ -742,6 +760,20 @@ void FKismetAIModule::LoadSettings()
 		}
 	}
 
+	AgentConfig.ModelContextWindows.Reset();
+	const TSharedPtr<FJsonObject>* ContextWindows = nullptr;
+	if (Settings->TryGetObjectField(TEXT("model_context_windows"), ContextWindows) && ContextWindows && ContextWindows->IsValid())
+	{
+		for (const auto& Pair : (*ContextWindows)->Values)
+		{
+			double Tokens = 0.0;
+			if (Pair.Value.IsValid() && Pair.Value->TryGetNumber(Tokens) && Tokens >= 1024.0 && Tokens <= 100000000.0)
+			{
+				AgentConfig.ModelContextWindows.Add(FString(Pair.Key).ToLower(), static_cast<int32>(Tokens));
+			}
+		}
+	}
+
 	FString Model;
 	if (Settings->TryGetStringField(TEXT("model"), Model) && !Model.IsEmpty())
 	{
@@ -894,6 +926,14 @@ void FKismetAIModule::SaveSettings()
 			BaseUrls->SetStringField(Pair.Key, Pair.Value);
 		}
 		Settings->SetObjectField(TEXT("provider_base_urls"), BaseUrls);
+	}
+	{
+		TSharedPtr<FJsonObject> ContextWindows = MakeShared<FJsonObject>();
+		for (const TPair<FString, int32>& Pair : AgentConfig.ModelContextWindows)
+		{
+			ContextWindows->SetNumberField(Pair.Key, Pair.Value);
+		}
+		Settings->SetObjectField(TEXT("model_context_windows"), ContextWindows);
 	}
 	Settings->SetStringField(TEXT("thinking_mode"), FKismetAIAgent::ThinkingModeToString(AgentConfig.ThinkingMode));
 	Settings->SetNumberField(TEXT("thinking_budget_tokens"), AgentConfig.ThinkingBudgetTokens);

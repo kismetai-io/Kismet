@@ -49,6 +49,14 @@ struct KISMETAIRUNTIME_API FKismetAIProviderProfile
 	bool bCustomModels = false;         // the user types any model id
 	FString StripModelSuffix;           // removed from the wire model id
 	FString KeyUrl;                     // where the user gets a key
+
+	// Model list endpoint (KismetAIModelDiscovery). "{base}" and "{origin}" are
+	// replaced with the resolved base URL and its scheme://host[:port]. Empty =
+	// the provider publishes no list.
+	FString ModelsUrl;
+	FString ModelsFormat;               // "openrouter", "anthropic", "openai", "google", "ollama", "lmstudio"
+	TMap<FString, FString> ModelsHeaders;  // sent with the list request only
+	FString ModelsAuth;                 // "x-goog-api-key" = send the key in that header instead of the profile's style
 };
 
 class KISMETAIRUNTIME_API FKismetAIProviderRegistry
@@ -101,12 +109,23 @@ namespace KismetAIProviders
 	// Write a key into the config field that GetApiKey reads for Slot.
 	KISMETAIRUNTIME_API void SetApiKey(FKismetAIAgentConfig& Config, const FString& Slot, const FString& Key);
 
+	// A server the user runs or points at: a local runtime, or a custom profile
+	// with no default base URL. Its models are discovered, priced 0 and health-
+	// checked before a run. OpenRouter takes typed ids too but is a cloud
+	// catalog, so it is not self-hosted.
+	KISMETAIRUNTIME_API bool IsSelfHosted(const FKismetAIProviderProfile& Profile);
+
 	// True when the profile needs no key or has one.
 	KISMETAIRUNTIME_API bool HasUsableKey(const FKismetAIAgentConfig& Config, const FKismetAIProviderProfile& Profile);
 
 	// Auth headers for curl (without the -H wrapper), per the profile's style.
 	KISMETAIRUNTIME_API TArray<FString> BuildAuthHeaders(const FKismetAIAgentConfig& Config, const FKismetAIProviderProfile& Profile);
 
-	// Model id as sent on the wire (StripModelSuffix applied).
+	// Headers for the profile's model list request: its auth (or ModelsAuth)
+	// plus ModelsHeaders. Never the extra headers of the chat request.
+	KISMETAIRUNTIME_API TArray<FString> BuildModelsHeaders(const FKismetAIAgentConfig& Config, const FKismetAIProviderProfile& Profile);
+
+	// Model id as sent on the wire (StripModelSuffix applied; a model_swap fast
+	// tier sends its fast model's id when Config.bFastMode is set).
 	KISMETAIRUNTIME_API FString WireModelId(const FKismetAIAgentConfig& Config, const FKismetAIProviderProfile& Profile);
 }

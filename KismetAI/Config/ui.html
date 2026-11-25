@@ -1538,6 +1538,24 @@ body:not(.chat-empty) #input-disclaimer { display: none; }
 	color: var(--ue-dim);
 	white-space: nowrap;
 }
+.model-group-source {
+	font-size: 10px;
+	color: var(--ue-dim);
+	margin-left: 6px;
+	font-weight: normal;
+	text-transform: none;
+}
+.model-option-badge {
+	font-size: 10px;
+	padding: 0 4px;
+	border: 1px solid var(--ue-border);
+	border-radius: 3px;
+	color: var(--ue-dim);
+	white-space: nowrap;
+}
+.model-option-badge.warn {
+	color: var(--ue-warning);
+}
 .model-popover-row label {
 	color: var(--ue-foreground);
 	font-size: 13px;
@@ -4364,6 +4382,9 @@ let includeBlueprint = true;
 let toolStartTimes = {};
 let activeToolGroup = null;
 let currentModelDisplay = '';
+// The current model id. Display names are not unique: GPT-6 Astra is a row
+// under OpenAI and again under OpenRouter.
+let currentModelIdValue = '';
 let availableModels = [];
 let currentEffortLevel = 'auto';
 let currentThinkingMode = 'adaptive';
@@ -6732,7 +6753,7 @@ function tokenCount(v) {
 }
 
 function modelContextWindowFromState() {
-	var m = availableModels.find(function(x) { return x.display_name === currentModelDisplay; });
+	var m = findModelRow(currentModelId());
 	return m && m.context_window ? tokenCount(m.context_window) : 0;
 }
 
@@ -7969,6 +7990,7 @@ function runComposerCommand(text) {
 			switchProvider(parts[0] || '', parts[1] || '', parts[2] || '');
 		}],
 		['/effort ', function(arg) { switchEffortLevel(arg); }],
+		['/context ', function(arg) { setLocalContextWindow(arg); }],
 		['/fastmode ', function(arg) { switchFastMode(arg); }],
 	];
 	for (let i = 0; i < inline.length; i++) {
@@ -8086,7 +8108,7 @@ function updateBlueprintPill() {
 // ─── Slash Commands ───
 const COMMANDS = [
 	{ name: '/clear',   description: 'Clear chat and start new session' },
-	{ name: '/context', description: 'Show context window usage and cost' },
+	{ name: '/context', description: 'Show context window usage and cost; /context <tokens> sets a local model\'s window' },
 	{ name: '/effort',  description: 'Set effort level (low, medium, high; xhigh, max where the model supports them)' },
 	{ name: '/fastmode', description: 'Toggle fast mode — premium price, faster (Opus 5.5, GPT-6 family)' },
 	{ name: '/help',    description: 'Show available commands' },
@@ -8829,8 +8851,27 @@ function modelSupportsFastMode(modelId) {
 }
 
 function currentModelId() {
+	if (currentModelIdValue) return currentModelIdValue;
 	var m = availableModels.find(function(x) { return x.display_name === currentModelDisplay; });
 	return m ? m.model_id : '';
+}
+
+function setCurrentModel(modelId, found) {
+	currentModelIdValue = modelId || '';
+	currentModelDisplay = found ? found.display_name : (modelId || '');
+}
+
+function isCurrentModelRow(m) {
+	var id = currentModelId();
+	return !!m && !!id && (m.model_id || '').toLowerCase() === id.toLowerCase();
+}
+
+// "128k", "1M": context windows in the picker.
+function formatContextTokens(n) {
+	n = Number(n) || 0;
+	if (n >= 1000000) return (Math.round(n / 100000) / 10) + 'M';
+	if (n >= 1000) return Math.round(n / 1000) + 'k';
+	return String(n);
 }
 
 function syncEffortPremiumState() {
@@ -8850,6 +8891,12 @@ function loadAvailableModels() {
 				availableModels = JSON.parse(json);
 			} catch(e) {
 				availableModels = [];
+			}
+			if (window.ue.kismetai.getmodel) {
+				window.ue.kismetai.getmodel().then(function(r) {
+					var id = unwrapBridgeString(r);
+					if (id) currentModelIdValue = id;
+				});
 			}
 			loadRecentModels();
 			refreshProviderStatus();
@@ -8889,6 +8936,22 @@ var effortLabels = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'XHigh',
 
 const modelPopoverEl = document.getElementById('model-popover');
 
+// Ask the editor to re-list local servers (and stale cloud lists), then pick
+// up whatever the last refresh produced. Rows change only when it finished.
+function refreshModelList() {
+	if (!window.ue || !window.ue.kismetai || !window.ue.kismetai.refreshmodels) return;
+	window.ue.kismetai.refreshmodels();
+	setTimeout(function() {
+		window.ue.kismetai.getavailablemodels().then(function(result) {
+			try {
+				var rows = JSON.parse(unwrapBridgeString(result));
+				if (Array.isArray(rows) && rows.length) availableModels = rows;
+			} catch (e) {}
+			refreshProviderStatus();
+		});
+	}, 2500);
+}
+
 function openModelPopover() {
 	if (modelPopoverEl.classList.contains('visible')) {
 		closeModelPopover();
@@ -8914,8 +8977,9 @@ function openModelPopover() {
 
 function doOpenModelPopover() {
 	refreshProviderStatus();
+	refreshModelList();
 	modelPickerRows = buildModelPickerSections().reduce(function(rows, section) { return rows.concat(section.rows); }, []);
-	modelSelectedIndex = modelPickerRows.findIndex(function(m) { return m.display_name === currentModelDisplay; });
+	modelSelectedIndex = modelPickerRows.findIndex(isCurrentModelRow);
 	if (modelSelectedIndex < 0) modelSelectedIndex = 0;
 	renderModelList();
 	var thinkingToggle = document.getElementById('thinking-toggle');
@@ -8984,7 +9048,7 @@ function modelPopoverOutsideClick(e) {
 function updateModelPill() {
 	var pill = document.getElementById('model-pill');
 	if (!pill) return;
-	var modelInfo = availableModels.find(function(m) { return m.display_name === currentModelDisplay; });
+	var modelInfo = findModelRow(currentModelId());
 	var modelId = modelInfo ? modelInfo.model_id : '';
 	var label = currentModelDisplay || 'Model';
 	var thinkingOn = currentThinkingMode && currentThinkingMode !== 'disabled';
@@ -9073,7 +9137,9 @@ var PROVIDER_LABELS = {
 // lists rows grouped by provider, so a header starts wherever it changes.
 var MODEL_GROUP_TITLES = {
 	anthropic: 'Anthropic', openai: 'OpenAI', google: 'Google', deepseek: 'DeepSeek',
-	zai: 'Z.ai', moonshot: 'Moonshot', minimax: 'MiniMax', openrouter: 'OpenRouter'
+	zai: 'Z.ai', moonshot: 'Moonshot', minimax: 'MiniMax', openrouter: 'OpenRouter',
+	ollama: 'Ollama (local)', lmstudio: 'LM Studio (local)',
+	'custom-openai': 'Custom (OpenAI-compatible)', 'custom-anthropic': 'Custom (Anthropic-compatible)'
 };
 
 function modelGroupKey(provider) {
@@ -9164,7 +9230,9 @@ function renderModelList() {
 		var addKey = section.provider && providerNeedsKey(section.provider)
 			? '<button type="button" class="model-group-addkey" data-provider="' + escapeHtml(section.provider) + '">Add key</button>'
 			: '';
-		return '<div class="model-group-title"><span>' + escapeHtml(section.title) + '</span>' + addKey + '</div>' +
+		var source = section.provider && providerStatus[section.provider] ? providerStatus[section.provider].models_source : '';
+		var sourceTag = source ? '<span class="model-group-source" title="Where this list came from: curated = shipped with Kismet; live = the provider\'s Models API">' + escapeHtml(source) + '</span>' : '';
+		return '<div class="model-group-title"><span>' + escapeHtml(section.title) + sourceTag + '</span>' + addKey + '</div>' +
 			section.rows.map(function(m) {
 				var i = modelPickerRows.length;
 				modelPickerRows.push(m);
@@ -9177,12 +9245,17 @@ function renderModelList() {
 }
 
 function renderModelOption(m, i, showProvider) {
-	var isActive = m.display_name === currentModelDisplay;
+	var isActive = isCurrentModelRow(m);
 	var isSelected = i === modelSelectedIndex;
 	return '<div class="model-option' + (isActive ? ' active' : '') + (isSelected ? ' selected' : '') + (providerNeedsKey(m.provider) ? ' nokey' : '') + '" data-alias="' + escapeHtml(m.alias) + '" data-index="' + i + '">' +
 		'<span class="model-option-name">' + escapeHtml(m.display_name) + '</span>' +
 		'<span class="model-option-right">' +
 			(showProvider && m.provider ? '<span class="model-option-provider">' + escapeHtml(PROVIDER_LABELS[m.provider] || m.provider) + '</span>' : '') +
+			(m.tool_calls === false ? '<span class="model-option-badge warn" title="This model reports no tool support; KismetAI needs tool calls">no tools</span>' : '') +
+			(m.discovered ? '<span class="model-option-provider" title="' + escapeHtml(m.context_source === 'assumed'
+				? 'The server reports no context window; 32k is assumed. Set the real one with /context <tokens>.'
+				: (m.context_source === 'user' ? 'Context window you set with /context' : 'Context window reported by the server')) + '">'
+				+ escapeHtml(formatContextTokens(m.context_window) + (m.context_source === 'assumed' ? ' (assumed)' : '')) + '</span>' : '') +
 			'<span class="model-option-check">' + (isActive ? kIcon('tick') : '') + '</span>' +
 		'</span>' +
 		'</div>';
@@ -9203,8 +9276,11 @@ function bindModelListEvents() {
 	modelListEl.querySelectorAll('.model-option').forEach(function(el) {
 		el.addEventListener('click', function() {
 			var alias = this.dataset.alias;
+			var row = modelPickerRows[parseInt(this.dataset.index)];
 			closeModelPopover();
-			switchModelByAlias(alias);
+			// A discovered local model is only meaningful on the server that listed it.
+			if (row && row.discovered) switchProvider(row.provider, row.model_id, '');
+			else switchModelByAlias(alias);
 		});
 		el.addEventListener('mouseenter', function() {
 			modelSelectedIndex = parseInt(this.dataset.index);
@@ -9219,8 +9295,8 @@ function switchModelByAlias(alias) {
 			var resolvedId = unwrapBridgeString(result);
 			if (resolvedId) {
 				// Find display name from available models
-				var found = availableModels.find(function(m) { return m.model_id === resolvedId; });
-				currentModelDisplay = found ? found.display_name : resolvedId;
+				var found = findModelRow(resolvedId);
+				setCurrentModel(resolvedId, found);
 				rememberRecentModel(resolvedId);
 				refreshProviderStatus();
 				// Effort adjustments per model capability:
@@ -9286,13 +9362,41 @@ function switchProvider(id, model, baseUrl) {
 					+ '. Run /provider to see the ids; local and custom providers need a model name, and a base URL must start with http:// or https://.');
 				return;
 			}
-			var found = availableModels.find(function(m) { return m.model_id === modelId; });
-			currentModelDisplay = found ? found.display_name : modelId;
+			var found = findModelRow(modelId);
+			setCurrentModel(modelId, found);
 			syncEffortPremiumState();
 			syncFastModeRow();
 			updateWelcome();
 			updateModelPill();
 			addStatusMessage('Provider: ' + id + ' · model: ' + modelId);
+		});
+	});
+}
+
+// Local and custom models: the context window the server really runs with.
+// "/context 65536", "/context 64k", "/context reset".
+function setLocalContextWindow(arg) {
+	var text = (arg || '').trim().toLowerCase();
+	var tokens = 0;
+	if (text !== 'reset') {
+		var m = text.match(/^(\d+(?:\.\d+)?)\s*([km]?)$/);
+		if (!m) { addStatusMessage('Usage: /context <tokens>   e.g. /context 65536, /context 64k, /context reset'); return; }
+		tokens = Math.round(parseFloat(m[1]) * (m[2] === 'm' ? 1000000 : (m[2] === 'k' ? 1024 : 1)));
+	}
+	waitForBridge().then(function() {
+		if (!window.ue.kismetai.setmodelcontextwindow) { addStatusMessage('Not available in this build.'); return; }
+		var providerId = activeProviderId();
+		var modelId = currentModelId();
+		window.ue.kismetai.setmodelcontextwindow(providerId, modelId, tokens).then(function(result) {
+			var now = Number(unwrapBridgeString(result)) || 0;
+			if (!now) {
+				addStatusMessage('Only a local or custom model\'s context window can be set. Pick one with /provider first.');
+				return;
+			}
+			addStatusMessage('Context window for ' + modelId + ': ' + formatContextTokens(now) + (tokens ? '' : ' (reported or assumed)'));
+			window.ue.kismetai.getavailablemodels().then(function(r) {
+				try { availableModels = JSON.parse(unwrapBridgeString(r)); } catch (e) {}
+			});
 		});
 	});
 }

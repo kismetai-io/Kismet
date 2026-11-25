@@ -13,6 +13,7 @@
 #include "KismetAIKeyStore.h"
 #include "KismetAILLMProvider.h"
 #include "KismetAIProviderProfile.h"
+#include "KismetAIModelRegistry.h"
 #include "KismetAISessionStorage.h"
 #include "KismetAIUpdater.h"
 #include "KismetAIProjectContext.h"
@@ -762,6 +763,12 @@ FString UKismetAIBridge::GetAvailableModels()
 		}
 		Row->SetArrayField(TEXT("effort_levels"), Effort);
 		Row->SetBoolField(TEXT("supports_fast_mode"), Model.bSupportsFastMode);
+		Row->SetStringField(TEXT("context_source"), Model.ContextSource);
+		Row->SetBoolField(TEXT("discovered"), Model.bDiscovered);
+		Row->SetBoolField(TEXT("tool_calls"), Model.bToolCalls);
+		Row->SetBoolField(TEXT("image_input"), Model.bImageInput);
+		Row->SetNumberField(TEXT("input_price"), Model.InputPrice);
+		Row->SetNumberField(TEXT("output_price"), Model.OutputPrice);
 		Rows.Add(MakeShared<FJsonValueObject>(Row));
 	}
 
@@ -795,6 +802,8 @@ FString UKismetAIBridge::GetProviders()
 		Row->SetStringField(TEXT("base_url"), KismetAIProviders::GetBaseUrl(Config, Profile));
 		Row->SetBoolField(TEXT("base_url_overridden"), Config.ProviderBaseUrls.Contains(Profile.Id));
 		Row->SetBoolField(TEXT("active"), Profile.Id == ActiveId);
+		// "curated", "live, <time>", "not running": where the picker rows came from.
+		Row->SetStringField(TEXT("models_source"), FKismetAIModelRegistry::Get().GetSourceLabel(Profile.Id));
 		Rows.Add(MakeShared<FJsonValueObject>(Row));
 	}
 	FString Json;
@@ -840,9 +849,53 @@ FString UKismetAIBridge::SetProvider(const FString& ProviderId, const FString& M
 		}
 		Config.ProviderBaseUrls.Add(Profile->Id, Url);
 	}
+	if (Profile && KismetAIProviders::IsSelfHosted(*Profile))
+	{
+		// A typed id the server did not list still needs a context window
+		// (the user's, else a conservative 32k) and a price of 0.
+		FKismetAIModelRegistry::Get().RegisterTypedModel(Config, Profile->Id, ModelId);
+	}
 	FKismetAIModule::Get().SetAgentConfig(Config);
 	FKismetAIModule::Get().SaveSettings();
 	return ModelId;
+}
+
+int32 UKismetAIBridge::SetModelContextWindow(const FString& ProviderId, const FString& ModelId, int32 Tokens)
+{
+	const FKismetAIProviderProfile* Profile = FKismetAIProviderRegistry::Get().Find(ProviderId.TrimStartAndEnd());
+	const FString Id = ModelId.TrimStartAndEnd();
+	// Only local and custom models: a cloud model's window is the vendor's.
+	if (!Profile || !KismetAIProviders::IsSelfHosted(*Profile) || Id.IsEmpty())
+	{
+		return 0;
+	}
+	FKismetAIAgentConfig Config = FKismetAIModule::Get().GetAgentConfig();
+	if (Tokens <= 0)
+	{
+		Config.ModelContextWindows.Remove(Id.ToLower());  // back to the reported or assumed figure
+	}
+	else
+	{
+		Config.ModelContextWindows.Add(Id.ToLower(), FMath::Clamp(Tokens, 1024, 100000000));
+	}
+	FKismetAIModule::Get().SetAgentConfig(Config);
+	FKismetAIModule::Get().SaveSettings();
+	FKismetAIModelRegistry::Get().ApplyUserContext(Config, Profile->Id, Id);
+	return FKismetAIAgent::GetModelContextLimit(Id);
+}
+
+void UKismetAIBridge::RefreshModels()
+{
+	// Opening the picker re-lists local servers (a model pulled a minute ago
+	// appears); cloud lists come from the 6-hour disk cache. Throttled.
+	static double LastRefresh = -1000.0;
+	const double Now = FPlatformTime::Seconds();
+	if (Now - LastRefresh < 15.0)
+	{
+		return;
+	}
+	LastRefresh = Now;
+	FKismetAIModelRegistry::Get().RefreshAllAsync(FKismetAIModule::Get().GetAgentConfig());
 }
 
 bool UKismetAIBridge::IsAccountWelcomeSeen()

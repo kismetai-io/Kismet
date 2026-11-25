@@ -370,7 +370,7 @@ bool FRegistry_AvailableModels_Row0::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRegistry_AvailableModels_Row1,
-	"KismetAI.OpusModelRegistry.AvailableModels.Row1IsFable51Premium",
+	"KismetAI.OpusModelRegistry.AvailableModels.Row1IsFable52Premium",
 	RegistryTestFlags)
 bool FRegistry_AvailableModels_Row1::RunTest(const FString& Parameters)
 {
@@ -378,7 +378,7 @@ bool FRegistry_AvailableModels_Row1::RunTest(const FString& Parameters)
 	if (!TestTrue(TEXT("at least 2 rows available"), Models.Num() > 1)) return false;
 
 	TestEqual(TEXT("Row[1].Alias"),   Models[1].Alias,   FString(TEXT("fable")));
-	TestEqual(TEXT("Row[1].ModelId"), Models[1].ModelId, FString(TEXT("claude-fable-5-1")));
+	TestEqual(TEXT("Row[1].ModelId"), Models[1].ModelId, FString(TEXT("claude-fable-5-2")));
 	TestEqual(TEXT("Row[1].Tier"),    Models[1].Tier,    FString(TEXT("premium")));
 	TestEqual(TEXT("Row[1].RecommendedEffort"), Models[1].RecommendedEffort, FString(TEXT("high")));
 	return true;
@@ -526,10 +526,19 @@ bool FRegistry_AvailableModels_ProviderOrder::RunTest(const FString& Parameters)
 		const FKismetAIAgent::FModelAliasInfo& Cur = Models[i];
 		TestTrue(FString::Printf(TEXT("%s: provider group does not go back"), *Cur.ModelId),
 			GroupRank(Cur.Provider) >= GroupRank(Prev.Provider));
+		// An aggregator's group is sorted per vendor ("anthropic/...", "openai/...").
+		auto Vendor = [](const FKismetAIAgent::FModelAliasInfo& Row)
+		{
+			int32 Slash = INDEX_NONE;
+			return Row.ModelId.FindChar(TEXT('/'), Slash) ? Row.ModelId.Left(Slash) : FString();
+		};
 		if (Cur.Provider == Prev.Provider)
 		{
-			TestTrue(FString::Printf(TEXT("%s: tier does not go back within %s"), *Cur.ModelId, *Cur.Provider),
-				TierRank(Cur.Tier) >= TierRank(Prev.Tier));
+			if (Vendor(Cur) == Vendor(Prev))
+			{
+				TestTrue(FString::Printf(TEXT("%s: tier does not go back within %s"), *Cur.ModelId, *Cur.Provider),
+					TierRank(Cur.Tier) >= TierRank(Prev.Tier));
+			}
 		}
 		else
 		{

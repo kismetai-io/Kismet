@@ -239,6 +239,10 @@ struct FKismetAIAgentConfig
 	TMap<FString, FString> ProviderKeys;
 	// User base-URL overrides per profile id (local runtimes, custom endpoints).
 	TMap<FString, FString> ProviderBaseUrls;
+	// User context windows for local and custom models (lowercase model id ->
+	// tokens). Most local runtimes report none or load less than the model's
+	// maximum; the picker lets the user set the figure the server really uses.
+	TMap<FString, int32> ModelContextWindows;
 	FString ApiBaseUrl = TEXT("https://api.anthropic.com");
 	// Resolved once at admission/request construction; providers never reread
 	// routing or budget environment variables for a frozen run.
@@ -617,11 +621,11 @@ public:
 	// must not mutate assets.
 	static bool IsToolAllowedInPlanMode(const FString& ToolName);
 
-	// Model alias resolution: "opus" -> "claude-opus-4-6", etc.
+	// Model alias resolution: "opus" -> "claude-opus-5-5", etc. (Config/models.json).
 	// Returns empty string if alias/model ID is not recognized.
 	static FString ResolveModelAlias(const FString& AliasOrModelId);
 
-	// Returns short display name for a full model ID: "claude-opus-4-6" -> "Opus 4.6"
+	// Returns short display name for a full model ID: "claude-opus-5-5" -> "Opus 5.5"
 	static FString GetModelDisplayName(const FString& ModelId);
 
 	// All available aliases and their descriptions (for UI)
@@ -636,6 +640,12 @@ public:
 		FString Provider;           // "anthropic" / "openai" / "minimax"
 		TArray<FString> EffortLevels;  // accepted effort values; empty = no effort control
 		bool bSupportsFastMode = false;
+		FString ContextSource;      // "catalog", "live", "reported", "user", "assumed"
+		bool bDiscovered = false;   // listed by a local or custom server, not the catalog
+		bool bToolCalls = true;
+		bool bImageInput = true;
+		double InputPrice = 0.0;    // $ per million tokens; 0 for local models
+		double OutputPrice = 0.0;
 	};
 	static TArray<FModelAliasInfo> GetAvailableModels();
 

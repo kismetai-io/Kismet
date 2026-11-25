@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "KismetAIAnthropicProvider.h"
+#include "KismetAIModelDiscovery.h"
 #include "KismetAIAgent.h"
 #include "KismetAILog.h"
 #include "KismetAIProviderProfile.h"
@@ -308,6 +309,17 @@ void FAnthropicProvider::ParseErrorBody(
 	{
 		(*ErrorObj)->TryGetStringField(TEXT("type"), Outcome.ErrorType);
 		(*ErrorObj)->TryGetStringField(TEXT("message"), Outcome.ErrorMessage);
+	}
+	else
+	{
+		// Ollama's Anthropic-compatible route answers {"error":"..."} for some failures.
+		Body->TryGetStringField(TEXT("error"), Outcome.ErrorMessage);
+	}
+	if (KismetAIModelsApi::IsToolsUnsupportedMessage(Outcome.ErrorMessage))
+	{
+		Outcome.ErrorType = TEXT("tools_unsupported");
+		Outcome.ErrorMessage = KismetAIModelsApi::ToolsUnsupportedMessage(Profile.DisplayName, TEXT("This model"))
+			+ TEXT(" (server: ") + Outcome.ErrorMessage + TEXT(")");
 	}
 }
 
