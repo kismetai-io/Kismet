@@ -70,7 +70,5 @@ guards against a regression. Current markers:
 
 - `messages.spec.js`: code blocks are not syntax highlighted (marked v15
   ignores the `highlight` option).
-- `composer.spec.js`: the Send button sends slash commands to the model
-  (fixed by kismetai-io/Kismet#6).
 - `replay.spec.js`: a replayed call with no recorded result is shown as a success.
 - `tool-cards.spec.js`: a call still in flight when a run stops keeps spinning.
