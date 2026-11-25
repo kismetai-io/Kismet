@@ -24,6 +24,20 @@ Editor-tool distribution may have additional requirements under the
 Unreal Engine and Blueprint names identify compatibility. Kismet is independent
 and is not sponsored or endorsed by Epic Games.
 
+## Panel UI libraries
+
+The panel UI (`Config/ui.html`) embeds two JavaScript libraries, minified:
+
+- [marked](https://github.com/markedjs/marked) 15.0.7 renders the agent's
+  Markdown replies. Copyright (c) 2018+, MarkedJS, and (c) 2011-2018,
+  Christopher Jeffrey. MIT licensed; it includes code derived from Markdown,
+  Copyright (c) 2004, John Gruber, under a BSD-style license. Both notices are in
+  [ThirdPartyNotices/marked-MIT.txt](ThirdPartyNotices/marked-MIT.txt).
+- [highlight.js](https://github.com/highlightjs/highlight.js) 11.11.1 highlights
+  code blocks. Copyright (c) 2006, Ivan Sagalaev. BSD 3-Clause licensed; the
+  notice is in
+  [ThirdPartyNotices/highlight.js-BSD-3-Clause.txt](ThirdPartyNotices/highlight.js-BSD-3-Clause.txt).
+
 ## Roboto
 
 The panel UI (`Config/ui.html`) embeds a Latin and Cyrillic subset of Roboto
