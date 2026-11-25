@@ -68,8 +68,8 @@ top. It passes while the bug exists and fails with "Expected to fail, but
 passed" once it is fixed, so the fix must remove the marker and the test then
 guards against a regression. Current markers:
 
-- `messages.spec.js`: model replies render raw HTML, so script in a reply runs
-  with bridge access; code blocks are not syntax highlighted.
+- `messages.spec.js`: code blocks are not syntax highlighted (marked v15
+  ignores the `highlight` option).
 - `composer.spec.js`: the Send button sends slash commands to the model
   (fixed by kismetai-io/Kismet#6).
 - `replay.spec.js`: a replayed call with no recorded result is shown as a success.
