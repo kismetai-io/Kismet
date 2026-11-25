@@ -4,6 +4,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Misc/ScopeRWLock.h"
+#include "Templates/UniquePtr.h"
 
 class FJsonObject;
 
@@ -55,6 +57,11 @@ struct KISMETAIRUNTIME_API FKismetAIModelCapabilities
 	// OpenAI-shaped reasoning.
 	bool bReasoning = false;                 // reasoning model: send reasoning.effort, no temperature
 
+	// What the model accepts at all. A live Models API (OpenRouter's modalities
+	// and supported_parameters, Ollama's capabilities) can turn these off.
+	bool bImageInput = true;                 // image blocks accepted
+	bool bToolCalls = true;                  // tool calls accepted; KismetAI cannot run without them
+
 	EKismetAIFastModeWire FastModeWire = EKismetAIFastModeWire::None;
 	FString FastModeModelId;                 // for ModelSwap
 };
@@ -81,6 +88,16 @@ struct KISMETAIRUNTIME_API FKismetAIModelEntry
 	TOptional<FKismetAIModelPrice> LongContextPrice;
 
 	FKismetAIModelCapabilities Caps;
+
+	// The same model on OpenRouter ("openrouter_id" in models.json). The catalog
+	// derives a picker row for it, so its prices and capabilities are never
+	// written twice.
+	FString OpenRouterId;
+	FString DerivedFrom;             // derived OpenRouter row: the base entry's id
+
+	// Runtime overlay rows only (live Models API, discovered local models).
+	bool bRuntime = false;
+	FString ContextSource;           // "catalog", "live", "reported", "user" or "assumed"
 };
 
 class KISMETAIRUNTIME_API FKismetAIModelCatalog
@@ -116,8 +133,25 @@ public:
 	const FKismetAIModelEntry& GetDefaults() const { return Defaults; }
 	const TArray<FKismetAIModelEntry>& GetEntries() const { return Entries; }
 
-	// Picker rows, in file order.
+	// Picker rows, in file order. Derived OpenRouter rows sit where the
+	// OpenRouter group starts (before the first openrouter entry), else after
+	// the last picker row.
 	TArray<const FKismetAIModelEntry*> GetPickerModels() const;
+
+	// ── Runtime overlay ─────────────────────────────────────────────────────
+	// Live Models API data and discovered local models, owned by the provider
+	// that reported them. Find() and Resolve() consult the overlay by exact id
+	// before the shipped entries, so a run uses the live context window and a
+	// discovered model resolves. Replacing a provider's rows never frees the
+	// old ones (pointers Find() returned stay valid); a refresh happens a few
+	// times per session, so this costs a few kilobytes. Thread-safe.
+	void SetRuntimeEntries(const FString& OwnerProvider, const TArray<FKismetAIModelEntry>& InEntries);
+	void ClearRuntimeEntries(const FString& OwnerProvider);
+	bool HasRuntimeEntry(const FString& ModelId) const;
+
+	// The shipped catalog, for code that maintains its runtime overlay
+	// (FKismetAIModelRegistry). Everything else uses Get().
+	static FKismetAIModelCatalog& GetMutable();
 
 	// The highest level in Supported that does not exceed Requested, in
 	// low < medium < high < xhigh < max order. Falls back to the lowest supported
@@ -130,9 +164,16 @@ public:
 
 private:
 	static bool ParseEntry(const FJsonObject& Obj, const FKismetAIModelEntry& Base, FKismetAIModelEntry& Out, FString& OutError);
+	static bool DeriveOpenRouterEntry(const FJsonObject& Obj, const FKismetAIModelEntry& BaseEntry, FKismetAIModelEntry& Out, FString& OutError);
+	const FKismetAIModelEntry* FindRuntime(const FString& LowerId) const;
 
 	TArray<FKismetAIModelEntry> Entries;
 	FKismetAIModelEntry Defaults;
 	FKismetAIModelEntry UnknownDefaults;
 	bool bLoaded = false;
+
+	mutable FRWLock RuntimeLock;
+	TArray<TUniquePtr<FKismetAIModelEntry>> RuntimeStorage;   // append-only
+	TMap<FString, const FKismetAIModelEntry*> RuntimeById;      // lowercase id -> current row
+	TMap<FString, TArray<FString>> RuntimeIdsByOwner;          // owner -> lowercase ids
 };

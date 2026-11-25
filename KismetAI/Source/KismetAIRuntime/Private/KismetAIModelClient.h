@@ -78,6 +78,7 @@ public:
 private:
 	TUniquePtr<ILLMProvider> Provider;
 	FString ProviderProfileId;  // profile Provider was built for
+	FString LastPreflightKey;   // local profile|base URL|model that passed PreflightLocal
 
 	// Set by Cancel(); observed by the curl wait loop and the retry backoff.
 	FThreadSafeBool bCancelled = false;

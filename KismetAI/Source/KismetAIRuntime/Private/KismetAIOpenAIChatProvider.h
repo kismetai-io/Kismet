@@ -66,6 +66,11 @@ public:
 
 	const FKismetAIProviderProfile& GetProfile() const { return Profile; }
 
+	// True for wire ids that reach Claude through an aggregator ("anthropic/..."):
+	// the request then carries cache_control on the system prompt and the last
+	// user message, or Claude through OpenRouter is never cached.
+	static bool UsesAnthropicCacheMarkers(const FString& WireModel);
+
 	// Text prepended to a tool_result that carried is_error, so the model can
 	// tell a failed call from a successful one (Chat Completions has no flag).
 	static const TCHAR* ToolErrorPrefix;

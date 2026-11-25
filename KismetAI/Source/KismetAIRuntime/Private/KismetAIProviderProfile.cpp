@@ -153,6 +153,32 @@ bool FKismetAIProviderRegistry::LoadFromJson(const FString& Json, FString& OutEr
 		Obj.TryGetBoolField(TEXT("custom_models"), P.bCustomModels);
 		Obj.TryGetStringField(TEXT("strip_model_suffix"), P.StripModelSuffix);
 		Obj.TryGetStringField(TEXT("key_url"), P.KeyUrl);
+		Obj.TryGetStringField(TEXT("models_url"), P.ModelsUrl);
+		Obj.TryGetStringField(TEXT("models_format"), P.ModelsFormat);
+		Obj.TryGetStringField(TEXT("models_auth"), P.ModelsAuth);
+		static const TSet<FString> KnownFormats = { TEXT(""), TEXT("openrouter"), TEXT("anthropic"), TEXT("openai"), TEXT("google"), TEXT("ollama"), TEXT("lmstudio") };
+		if (!KnownFormats.Contains(P.ModelsFormat) || P.ModelsUrl.IsEmpty() != P.ModelsFormat.IsEmpty())
+		{
+			OutError = FString::Printf(TEXT("provider '%s': models_url and a known models_format go together"), *P.Id);
+			return false;
+		}
+		if (!P.ModelsAuth.IsEmpty() && P.ModelsAuth != TEXT("x-goog-api-key"))
+		{
+			OutError = FString::Printf(TEXT("provider '%s': unknown models_auth '%s'"), *P.Id, *P.ModelsAuth);
+			return false;
+		}
+		const TSharedPtr<FJsonObject>* ModelsHeaders = nullptr;
+		if (Obj.TryGetObjectField(TEXT("models_headers"), ModelsHeaders) && ModelsHeaders && ModelsHeaders->IsValid())
+		{
+			for (const auto& Pair : (*ModelsHeaders)->Values)
+			{
+				FString Value;
+				if (Pair.Value.IsValid() && Pair.Value->TryGetString(Value))
+				{
+					P.ModelsHeaders.Add(FString(Pair.Key), Value);
+				}
+			}
+		}
 		if (P.Auth != EKismetAIAuthStyle::None && P.KeySlot.IsEmpty())
 		{
 			OutError = FString::Printf(TEXT("provider '%s' authenticates but has no key_slot"), *P.Id);
@@ -323,6 +349,11 @@ namespace KismetAIProviders
 		}
 	}
 
+	bool IsSelfHosted(const FKismetAIProviderProfile& Profile)
+	{
+		return Profile.bLocal || (Profile.bCustomModels && Profile.BaseUrl.IsEmpty());
+	}
+
 	bool HasUsableKey(const FKismetAIAgentConfig& Config, const FKismetAIProviderProfile& Profile)
 	{
 		return Profile.Auth == EKismetAIAuthStyle::None || !GetApiKey(Config, Profile).IsEmpty();
@@ -356,9 +387,39 @@ namespace KismetAIProviders
 		return Headers;
 	}
 
+	TArray<FString> BuildModelsHeaders(const FKismetAIAgentConfig& Config, const FKismetAIProviderProfile& Profile)
+	{
+		TArray<FString> Headers;
+		if (Profile.ModelsAuth == TEXT("x-goog-api-key"))
+		{
+			Headers.Add(FString::Printf(TEXT("x-goog-api-key: %s"), *GetApiKey(Config, Profile)));
+		}
+		else
+		{
+			FKismetAIProviderProfile AuthOnly = Profile;
+			AuthOnly.ExtraHeaders.Reset();
+			Headers = BuildAuthHeaders(Config, AuthOnly);
+		}
+		for (const TPair<FString, FString>& Pair : Profile.ModelsHeaders)
+		{
+			Headers.Add(FString::Printf(TEXT("%s: %s"), *Pair.Key, *Pair.Value));
+		}
+		return Headers;
+	}
+
 	FString WireModelId(const FKismetAIAgentConfig& Config, const FKismetAIProviderProfile& Profile)
 	{
 		FString Wire = Config.Model;
+		// A fast tier that is a separate model (Kimi K3.1 Pro -> its high-speed
+		// variant) is asked for by sending that model's id.
+		if (Config.bFastMode)
+		{
+			const FKismetAIModelCapabilities& Caps = FKismetAIModelCatalog::Get().FindOrDefaults(Config.Model).Caps;
+			if (Caps.FastModeWire == EKismetAIFastModeWire::ModelSwap && !Caps.FastModeModelId.IsEmpty())
+			{
+				Wire = Caps.FastModeModelId;
+			}
+		}
 		if (!Profile.StripModelSuffix.IsEmpty())
 		{
 			Wire.RemoveFromEnd(Profile.StripModelSuffix);

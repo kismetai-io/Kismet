@@ -23,6 +23,7 @@
 #include "KismetAIDiagnostics.h"
 #include "KismetAILLMProvider.h"
 #include "KismetAIModelCatalog.h"
+#include "KismetAIModelRegistry.h"
 #include "KismetAIAnthropicProvider.h"
 #include "KismetAIPlanFile.h"
 #include "KismetAIContextProjection.h"
@@ -653,6 +654,13 @@ EModelCallResult FKismetAIAgent::ClassifyCallOutcome(
 		return EModelCallResult::FatalError;
 	}
 
+	// A local model without tool support, or a local server that is down:
+	// retrying changes nothing, the user has to pick another model or start it.
+	if (ErrorType == TEXT("tools_unsupported") || ErrorType == TEXT("local_server_unreachable"))
+	{
+		return EModelCallResult::FatalError;
+	}
+
 	// ── Anthropic-specific message-driven categories (unchanged) ────────
 	// These take precedence over generic HTTP-code branching.
 	if (ErrorType == TEXT("invalid_request_error")
@@ -739,6 +747,22 @@ FUserFacingError FKismetAIAgent::BuildUserFacingError(const FModelCallOutcome& O
 	{
 		UFE.Message = Outcome.ErrorMessage;
 		UFE.Suggestions.Add(TEXT("Try again later"));
+		return UFE;
+	}
+
+	// Local runtime problems carry a complete message that names the model or
+	// the address; the generic "check API key" advice would mislead.
+	if (Outcome.ErrorType == TEXT("tools_unsupported"))
+	{
+		UFE.Message = Outcome.ErrorMessage;
+		UFE.Suggestions.Add(TEXT("Pick a model that supports tool calls"));
+		return UFE;
+	}
+	if (Outcome.ErrorType == TEXT("local_server_unreachable"))
+	{
+		UFE.Message = Outcome.ErrorMessage;
+		UFE.Suggestions.Add(TEXT("Start the local server"));
+		UFE.Suggestions.Add(TEXT("Check the provider's base URL with /provider"));
 		return UFE;
 	}
 
@@ -1182,9 +1206,13 @@ TArray<FKismetAIAgent::FModelAliasInfo> FKismetAIAgent::GetAvailableModels()
 	// Picker rows in Config/models.json order (grouped by provider there,
 	// strongest first). The UI renders this array in order, starts a section
 	// header wherever the provider group changes, and badges rows by tier.
+	// The registry substitutes live and discovered rows (KismetAIModelRegistry);
+	// before any refresh it returns the catalog's picker rows unchanged.
 	TArray<FModelAliasInfo> Models;
-	for (const FKismetAIModelEntry* Entry : FKismetAIModelCatalog::Get().GetPickerModels())
+	const TArray<FKismetAIModelEntry> PickerRows = FKismetAIModelRegistry::Get().GetPickerRows();
+	for (const FKismetAIModelEntry& Row : PickerRows)
 	{
+		const FKismetAIModelEntry* Entry = &Row;
 		FModelAliasInfo Info;
 		Info.Alias = Entry->Alias.IsEmpty() ? Entry->Id : Entry->Alias;
 		Info.ModelId = Entry->Id;
@@ -1195,6 +1223,14 @@ TArray<FKismetAIAgent::FModelAliasInfo> FKismetAIAgent::GetAvailableModels()
 		Info.Provider = Entry->Provider;
 		Info.EffortLevels = Entry->Caps.EffortLevels;
 		Info.bSupportsFastMode = Entry->Caps.FastModeWire != EKismetAIFastModeWire::None;
+		Info.ContextSource = Entry->ContextSource;
+		// Local rows carry where their window came from; catalog and live rows do not.
+		Info.bDiscovered = Entry->ContextSource == TEXT("reported") || Entry->ContextSource == TEXT("user")
+			|| Entry->ContextSource == TEXT("assumed");
+		Info.bToolCalls = Entry->Caps.bToolCalls;
+		Info.bImageInput = Entry->Caps.bImageInput;
+		Info.InputPrice = Entry->Price.Input;
+		Info.OutputPrice = Entry->Price.Output;
 		Models.Add(MoveTemp(Info));
 	}
 

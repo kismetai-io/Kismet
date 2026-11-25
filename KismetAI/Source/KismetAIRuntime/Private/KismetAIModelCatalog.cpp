@@ -104,6 +104,8 @@ namespace
 		C.TryGetBoolField(TEXT("mid_conversation_system"), Caps.bMidConversationSystem);
 		C.TryGetBoolField(TEXT("thinking_block_binding"), Caps.bThinkingBlockBinding);
 		C.TryGetBoolField(TEXT("reasoning"), Caps.bReasoning);
+		C.TryGetBoolField(TEXT("image_input"), Caps.bImageInput);
+		C.TryGetBoolField(TEXT("tool_calls"), Caps.bToolCalls);
 		C.TryGetStringField(TEXT("fast_mode_model"), Caps.FastModeModelId);
 
 		if (C.HasField(TEXT("effort")))
@@ -170,6 +172,10 @@ bool FKismetAIModelCatalog::ParseEntry(const FJsonObject& Obj, const FKismetAIMo
 	Out.Provider.Empty();
 	Out.MaxOutputTokens = 0;
 	Out.bPatternOnly = false;
+	Out.OpenRouterId.Empty();
+	Out.DerivedFrom.Empty();
+	Out.bRuntime = false;
+	Out.ContextSource = TEXT("catalog");
 
 	Obj.TryGetBoolField(TEXT("pattern_only"), Out.bPatternOnly);
 	Obj.TryGetStringField(TEXT("id"), Out.Id);
@@ -240,9 +246,91 @@ bool FKismetAIModelCatalog::ParseEntry(const FJsonObject& Obj, const FKismetAIMo
 	{
 		return false;
 	}
+	Obj.TryGetStringField(TEXT("openrouter_id"), Out.OpenRouterId);
+	if (!Out.OpenRouterId.IsEmpty() && (Out.bPatternOnly || !Out.OpenRouterId.Contains(TEXT("/"))))
+	{
+		OutError = TEXT("openrouter_id must be a vendor/model id on a real model");
+		return false;
+	}
 	if (Out.FastPrice.IsSet() != (Out.Caps.FastModeWire != EKismetAIFastModeWire::None))
 	{
 		OutError = TEXT("fast_pricing and capabilities.fast_mode must be set together");
+		return false;
+	}
+	return true;
+}
+
+bool FKismetAIModelCatalog::DeriveOpenRouterEntry(const FJsonObject& Obj, const FKismetAIModelEntry& BaseEntry, FKismetAIModelEntry& Out, FString& OutError)
+{
+	// The same model through OpenRouter's Chat Completions endpoint: one key
+	// reaches every vendor. Prices and limits are the base model's (OpenRouter
+	// passes vendor prices through; the live list replaces them when it loads).
+	// The request shape is OpenAI Chat's, so the vendor's own wire features do
+	// not carry over: no fast tier, no Anthropic thinking fields, and effort is
+	// sent as reasoning_effort in the levels OpenRouter normalises.
+	Out = BaseEntry;
+	Out.Id = BaseEntry.OpenRouterId;
+	Out.Ids.Reset();
+	Out.Alias = Out.Id;          // the picker selects rows by alias
+	Out.Aliases.Reset();
+	Out.MatchPatterns = { Out.Id.ToLower() };
+	Out.Provider = TEXT("openrouter");
+	Out.DerivedFrom = BaseEntry.Id;
+	Out.OpenRouterId.Empty();
+	Out.FastPrice.Reset();
+	Out.bInPicker = BaseEntry.bInPicker;
+	Obj.TryGetBoolField(TEXT("openrouter_picker"), Out.bInPicker);
+	Obj.TryGetStringField(TEXT("openrouter_name"), Out.DisplayName);
+	ReadPrice(Obj, TEXT("openrouter_pricing"), Out.Price);
+
+	FKismetAIModelCapabilities& Caps = Out.Caps;
+	const bool bHadEffort = Caps.EffortLevels.Num() > 0 || Caps.bReasoning;
+	TArray<FString> Levels;
+	for (const FString& Level : Caps.EffortLevels)
+	{
+		if (Level == TEXT("low") || Level == TEXT("medium") || Level == TEXT("high"))
+		{
+			Levels.Add(Level);
+		}
+	}
+	if (bHadEffort && Levels.Num() == 0)
+	{
+		Levels = { TEXT("low"), TEXT("medium"), TEXT("high") };
+	}
+	Caps.bReasoning = bHadEffort;
+	Caps.EffortLevels = Levels;
+	Caps.bEffortBeta = false;
+	Caps.bThinking = false;
+	Caps.bAdaptiveThinking = false;
+	Caps.bBudgetThinking = false;
+	Caps.bThinkingAlwaysOn = false;
+	Caps.bSummarizedThinkingDisplay = false;
+	Caps.bLegacyThinkingBeta = false;
+	Caps.bMidConversationSystem = false;
+	Caps.bThinkingBlockBinding = false;
+	Caps.FastModeWire = EKismetAIFastModeWire::None;
+	Caps.FastModeModelId.Empty();
+	// "openrouter_capabilities" overrides the derived shape where OpenRouter
+	// accepts more than the vendor's own endpoint documents (GLM effort).
+	const TSharedPtr<FJsonObject>* OverrideCaps = nullptr;
+	if (Obj.TryGetObjectField(TEXT("openrouter_capabilities"), OverrideCaps) && OverrideCaps && OverrideCaps->IsValid())
+	{
+		TSharedPtr<FJsonObject> Wrapper = MakeShared<FJsonObject>();
+		Wrapper->SetObjectField(TEXT("capabilities"), *OverrideCaps);
+		if (!ReadCapabilities(*Wrapper, Caps, OutError))
+		{
+			OutError = TEXT("openrouter_capabilities: ") + OutError;
+			return false;
+		}
+		Levels = Caps.EffortLevels;
+	}
+	if (Out.RecommendedEffort.Len() > 0 && !Levels.Contains(Out.RecommendedEffort))
+	{
+		Out.RecommendedEffort = Levels.Num() > 0 ? Levels.Last() : FString();
+	}
+	if (Out.DisplayName.IsEmpty())
+	{
+		OutError = TEXT("derived OpenRouter row has no display name");
 		return false;
 	}
 	return true;
@@ -295,6 +383,7 @@ bool FKismetAIModelCatalog::LoadFromJson(const FString& Json, FString& OutError)
 
 	TSet<FString> SeenNames;
 	TArray<FKismetAIModelEntry> Parsed;
+	TArray<FKismetAIModelEntry> Derived;
 	for (int32 Index = 0; Index < Models->Num(); ++Index)
 	{
 		const TSharedPtr<FJsonObject>* ModelObj = nullptr;
@@ -311,15 +400,31 @@ bool FKismetAIModelCatalog::LoadFromJson(const FString& Json, FString& OutError)
 			return false;
 		}
 
-		// Every id and alias names exactly one model, or lookups would depend on order.
-		if (!Entry.bPatternOnly)
+		TArray<FKismetAIModelEntry*> ToCheck = { &Entry };
+		FKismetAIModelEntry DerivedEntry;
+		if (!Entry.OpenRouterId.IsEmpty())
 		{
-			TArray<FString> Names = Entry.Ids;
-			Names.Add(Entry.Id);
-			Names.Append(Entry.Aliases);
-			if (!Entry.Alias.IsEmpty())
+			if (!DeriveOpenRouterEntry(**ModelObj, Entry, DerivedEntry, EntryError))
 			{
-				Names.Add(Entry.Alias);
+				OutError = FString::Printf(TEXT("models[%d] (%s): %s"), Index, *Entry.Id, *EntryError);
+				return false;
+			}
+			ToCheck.Add(&DerivedEntry);
+		}
+
+		// Every id and alias names exactly one model, or lookups would depend on order.
+		for (FKismetAIModelEntry* Checked : ToCheck)
+		{
+			if (Checked->bPatternOnly)
+			{
+				continue;
+			}
+			TArray<FString> Names = Checked->Ids;
+			Names.Add(Checked->Id);
+			Names.Append(Checked->Aliases);
+			if (!Checked->Alias.IsEmpty())
+			{
+				Names.Add(Checked->Alias);
 			}
 			// An alias that repeats the entry's own id (MiniMax-M3 / minimax-m3) is fine.
 			TSet<FString> EntryNames;
@@ -339,6 +444,34 @@ bool FKismetAIModelCatalog::LoadFromJson(const FString& Json, FString& OutError)
 			}
 		}
 		Parsed.Add(MoveTemp(Entry));
+		if (!DerivedEntry.Id.IsEmpty())
+		{
+			Derived.Add(MoveTemp(DerivedEntry));
+		}
+	}
+
+	// Derived OpenRouter rows open the OpenRouter picker group, so the group
+	// stays contiguous and OpenRouter-only models (Grok, Qwen) follow them.
+	if (Derived.Num() > 0)
+	{
+		int32 InsertAt = INDEX_NONE;
+		int32 LastPicker = INDEX_NONE;
+		for (int32 Index = 0; Index < Parsed.Num(); ++Index)
+		{
+			if (Parsed[Index].bInPicker)
+			{
+				LastPicker = Index;
+				if (InsertAt == INDEX_NONE && Parsed[Index].Provider == TEXT("openrouter"))
+				{
+					InsertAt = Index;
+				}
+			}
+		}
+		if (InsertAt == INDEX_NONE)
+		{
+			InsertAt = LastPicker == INDEX_NONE ? Parsed.Num() : LastPicker + 1;
+		}
+		Parsed.Insert(MoveTemp(Derived), InsertAt);
 	}
 
 	Entries = MoveTemp(Parsed);
@@ -348,9 +481,15 @@ bool FKismetAIModelCatalog::LoadFromJson(const FString& Json, FString& OutError)
 
 const FKismetAIModelCatalog& FKismetAIModelCatalog::Get()
 {
-	static const FKismetAIModelCatalog Catalog = []()
+	return GetMutable();
+}
+
+FKismetAIModelCatalog& FKismetAIModelCatalog::GetMutable()
+{
+	// Built in place: the runtime overlay's lock makes the catalog immovable.
+	static FKismetAIModelCatalog Catalog;
+	static const bool bLoadedOnce = [](FKismetAIModelCatalog& Loaded)
 	{
-		FKismetAIModelCatalog Loaded;
 
 		FString DiskPath;
 		if (TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("KismetAI")))
@@ -370,9 +509,59 @@ const FKismetAIModelCatalog& FKismetAIModelCatalog::Get()
 			KISMETAI_LOG(LogKismetAIModelCatalog, Error,
 				TEXT("Model catalog is invalid: %s. Every model uses conservative unknown capabilities and assumed defaults."), *Error);
 		}
-		return Loaded;
-	}();
+		return true;
+	}(Catalog);
+	(void)bLoadedOnce;
 	return Catalog;
+}
+
+const FKismetAIModelEntry* FKismetAIModelCatalog::FindRuntime(const FString& LowerId) const
+{
+	FReadScopeLock Lock(RuntimeLock);
+	const FKismetAIModelEntry* const* Found = RuntimeById.Find(LowerId);
+	return Found ? *Found : nullptr;
+}
+
+bool FKismetAIModelCatalog::HasRuntimeEntry(const FString& ModelId) const
+{
+	return FindRuntime(ModelId.TrimStartAndEnd().ToLower()) != nullptr;
+}
+
+void FKismetAIModelCatalog::SetRuntimeEntries(const FString& OwnerProvider, const TArray<FKismetAIModelEntry>& InEntries)
+{
+	FWriteScopeLock Lock(RuntimeLock);
+	if (TArray<FString>* Previous = RuntimeIdsByOwner.Find(OwnerProvider))
+	{
+		for (const FString& Id : *Previous)
+		{
+			const FKismetAIModelEntry* const* Current = RuntimeById.Find(Id);
+			if (Current && (*Current)->Provider == OwnerProvider)
+			{
+				RuntimeById.Remove(Id);
+			}
+		}
+	}
+	TArray<FString>& Owned = RuntimeIdsByOwner.FindOrAdd(OwnerProvider);
+	Owned.Reset();
+	for (const FKismetAIModelEntry& In : InEntries)
+	{
+		if (In.Id.IsEmpty() || In.bPatternOnly)
+		{
+			continue;
+		}
+		TUniquePtr<FKismetAIModelEntry> Stored = MakeUnique<FKismetAIModelEntry>(In);
+		Stored->bRuntime = true;
+		Stored->Provider = OwnerProvider;
+		const FString Lower = Stored->Id.ToLower();
+		RuntimeById.Add(Lower, Stored.Get());
+		Owned.AddUnique(Lower);
+		RuntimeStorage.Add(MoveTemp(Stored));
+	}
+}
+
+void FKismetAIModelCatalog::ClearRuntimeEntries(const FString& OwnerProvider)
+{
+	SetRuntimeEntries(OwnerProvider, TArray<FKismetAIModelEntry>());
 }
 
 const FKismetAIModelEntry* FKismetAIModelCatalog::Find(const FString& ModelName) const
@@ -381,6 +570,10 @@ const FKismetAIModelEntry* FKismetAIModelCatalog::Find(const FString& ModelName)
 	if (Lower.IsEmpty())
 	{
 		return nullptr;
+	}
+	if (const FKismetAIModelEntry* Runtime = FindRuntime(Lower))
+	{
+		return Runtime;
 	}
 
 	for (const FKismetAIModelEntry& Entry : Entries)
@@ -467,6 +660,11 @@ FString FKismetAIModelCatalog::Resolve(const FString& AliasOrId) const
 		{
 			if (Other.ToLower() == Lower) return Other;
 		}
+	}
+	// A live or discovered model resolves to itself once its provider listed it.
+	if (const FKismetAIModelEntry* Runtime = FindRuntime(Lower))
+	{
+		return Runtime->Id;
 	}
 	return FString();
 }

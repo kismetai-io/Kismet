@@ -4,6 +4,7 @@
 #include "KismetAIProviderProfile.h"
 #include "KismetAIRunSetup.h"
 #include "KismetAIModelCatalog.h"
+#include "KismetAIModelDiscovery.h"
 #include "KismetAIAgent.h"
 #include "KismetAIKeyStore.h"
 #include "KismetAILLMProvider.h"
@@ -239,7 +240,17 @@ bool FProviderProfile_BodyFollowsProfile::RunTest(const FString& Parameters)
 		{
 			TestFalse(TEXT("deepseek: no Anthropic cache_control markers"), (*System)[0]->AsObject()->HasField(TEXT("cache_control")));
 		}
-		TestFalse(TEXT("deepseek: no thinking field (unconfirmed support)"), Body->HasField(TEXT("thinking")));
+		// DeepSeek's Anthropic endpoint takes thinking (adaptive = enabled) and
+		// output_config.effort low/high/max (api-docs.deepseek.com, 2026-11-25).
+		const TSharedPtr<FJsonObject>* Thinking = nullptr;
+		TestTrue(TEXT("deepseek: thinking field sent"), Body->TryGetObjectField(TEXT("thinking"), Thinking));
+		const TSharedPtr<FJsonObject>* OutputConfig = nullptr;
+		TestTrue(TEXT("deepseek: effort sent"), Body->TryGetObjectField(TEXT("output_config"), OutputConfig));
+		if (OutputConfig)
+		{
+			const FString Effort = (*OutputConfig)->GetStringField(TEXT("effort"));
+			TestTrue(TEXT("deepseek: effort is a level it accepts"), Effort == TEXT("low") || Effort == TEXT("high") || Effort == TEXT("max"));
+		}
 	}
 	return true;
 }
@@ -373,5 +384,52 @@ bool FProviderProfile_UnknownOptionalFields::RunTest(const FString& Parameters)
 		}
 	}
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FProviderProfile_ModelListEndpoints,
+	"KismetAI.ProviderProfile.ModelListEndpoints", ProviderProfileTestFlags)
+bool FProviderProfile_ModelListEndpoints::RunTest(const FString& Parameters)
+{
+	struct FCase { const TCHAR* Id; const TCHAR* Format; const TCHAR* Url; };
+	for (const FCase& Case : {
+		FCase{ TEXT("anthropic"), TEXT("anthropic"), TEXT("https://api.anthropic.com/v1/models?limit=1000") },
+		FCase{ TEXT("openai"), TEXT("openai"), TEXT("https://api.openai.com/v1/models") },
+		FCase{ TEXT("google"), TEXT("google"), TEXT("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000") },
+		FCase{ TEXT("deepseek"), TEXT("openai"), TEXT("https://api.deepseek.com/models") },
+		FCase{ TEXT("moonshot"), TEXT("openai"), TEXT("https://api.moonshot.ai/v1/models") },
+		FCase{ TEXT("openrouter"), TEXT("openrouter"), TEXT("https://openrouter.ai/api/v1/models") },
+		FCase{ TEXT("zai"), TEXT(""), TEXT("") },
+		FCase{ TEXT("minimax"), TEXT(""), TEXT("") } })
+	{
+		const FKismetAIProviderProfile& Profile = RequireProfile(*this, Case.Id);
+		FKismetAIAgentConfig Cfg = ConfigFor(TEXT("claude-opus-5-5"));
+		Cfg.bProviderEnvironmentResolved = true;
+		Cfg.ProviderBaseUrls.Add(Profile.Id, Profile.BaseUrl);
+		TestEqual(FString(Case.Id) + TEXT(": format"), Profile.ModelsFormat, FString(Case.Format));
+		const FString Url = Profile.ModelsUrl.IsEmpty() ? FString()
+			: KismetAIModelsApi::ExpandUrl(Profile.ModelsUrl, KismetAIProviders::GetBaseUrl(Cfg, Profile));
+		TestEqual(FString(Case.Id) + TEXT(": list URL"), Url, FString(Case.Url));
+	}
+	for (const TCHAR* Local : { TEXT("ollama"), TEXT("lmstudio"), TEXT("custom-openai"), TEXT("custom-anthropic") })
+	{
+		TestFalse(FString(Local) + TEXT(": has a list for discovery"), RequireProfile(*this, Local).ModelsUrl.IsEmpty());
+	}
+
+	FKismetAIAgentConfig Cfg = ConfigFor(TEXT("gemini-4-argon"));
+	Cfg.ProviderKeys.Add(TEXT("google"), TEXT("g-key"));
+	const FString Google = FString::Join(KismetAIProviders::BuildModelsHeaders(Cfg, RequireProfile(*this, TEXT("google"))), TEXT("\n"));
+	TestEqual(TEXT("Gemini's native list takes x-goog-api-key"), Google, FString(TEXT("x-goog-api-key: g-key")));
+	const FString Anthropic = FString::Join(KismetAIProviders::BuildModelsHeaders(Cfg, RequireProfile(*this, TEXT("anthropic"))), TEXT("\n"));
+	TestTrue(TEXT("Anthropic list: key and version"), Anthropic.Contains(TEXT("x-api-key: sk-ant")) && Anthropic.Contains(TEXT("anthropic-version: 2023-06-01")));
+	const FString OpenRouter = FString::Join(KismetAIProviders::BuildModelsHeaders(Cfg, RequireProfile(*this, TEXT("openrouter"))), TEXT("\n"));
+	TestFalse(TEXT("chat-only headers stay off the list request"), OpenRouter.Contains(TEXT("X-Title")));
+
+	FKismetAIProviderRegistry Registry;
+	FString Error;
+	TestFalse(TEXT("an unknown models_format is refused"), Registry.LoadFromJson(TEXT(R"({"schema_version":1,"providers":[
+		{"id":"x","protocol":"openai_chat","auth":"none","models_url":"{base}/models","models_format":"soap"}]})"), Error));
+	TestFalse(TEXT("a format without a URL is refused"), Registry.LoadFromJson(TEXT(R"({"schema_version":1,"providers":[
+		{"id":"x","protocol":"openai_chat","auth":"none","models_format":"openai"}]})"), Error));
 	return true;
 }

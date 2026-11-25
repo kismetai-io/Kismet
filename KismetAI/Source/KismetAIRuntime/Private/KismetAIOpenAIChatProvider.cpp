@@ -5,6 +5,7 @@
 #include "KismetAIAgent.h"
 #include "KismetAILog.h"
 #include "KismetAIModelCatalog.h"
+#include "KismetAIModelDiscovery.h"
 #include "KismetAIProviderProfile.h"
 
 #include "Dom/JsonObject.h"
@@ -145,6 +146,73 @@ namespace KismetAIOpenAIChat
 		Part->SetStringField(TEXT("type"), TEXT("image_url"));
 		Part->SetObjectField(TEXT("image_url"), ImageUrl);
 		return Part;
+	}
+
+	// Put an ephemeral cache_control on a message's last text part, turning a
+	// plain string content into a one-part array first.
+	bool MarkLastTextPart(const TSharedPtr<FJsonObject>& Msg)
+	{
+		TSharedPtr<FJsonObject> CacheControl = MakeShared<FJsonObject>();
+		CacheControl->SetStringField(TEXT("type"), TEXT("ephemeral"));
+		FString Plain;
+		if (Msg->TryGetStringField(TEXT("content"), Plain))
+		{
+			if (Plain.IsEmpty())
+			{
+				return false;
+			}
+			TSharedPtr<FJsonObject> Part = MakeShared<FJsonObject>();
+			Part->SetStringField(TEXT("type"), TEXT("text"));
+			Part->SetStringField(TEXT("text"), Plain);
+			Part->SetObjectField(TEXT("cache_control"), CacheControl);
+			Msg->SetArrayField(TEXT("content"), { MakeShared<FJsonValueObject>(Part) });
+			return true;
+		}
+		const TArray<TSharedPtr<FJsonValue>>* Parts = nullptr;
+		if (!Msg->TryGetArrayField(TEXT("content"), Parts) || !Parts)
+		{
+			return false;
+		}
+		for (int32 Index = Parts->Num() - 1; Index >= 0; --Index)
+		{
+			const TSharedPtr<FJsonObject>* PartPtr = nullptr;
+			FString Type;
+			if ((*Parts)[Index].IsValid() && (*Parts)[Index]->TryGetObject(PartPtr) && PartPtr
+				&& (*PartPtr)->TryGetStringField(TEXT("type"), Type) && Type == TEXT("text"))
+			{
+				(*PartPtr)->SetObjectField(TEXT("cache_control"), CacheControl);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// Two breakpoints: the system prompt (stable for the whole run) and the
+	// last user message (the growing prefix). Anthropic allows four.
+	void AddCacheMarkers(TArray<TSharedPtr<FJsonValue>>& ChatMessages)
+	{
+		for (const TSharedPtr<FJsonValue>& Value : ChatMessages)
+		{
+			const TSharedPtr<FJsonObject>* MsgPtr = nullptr;
+			FString Role;
+			if (Value.IsValid() && Value->TryGetObject(MsgPtr) && MsgPtr
+				&& (*MsgPtr)->TryGetStringField(TEXT("role"), Role) && Role == TEXT("system"))
+			{
+				MarkLastTextPart(*MsgPtr);
+				break;
+			}
+		}
+		for (int32 Index = ChatMessages.Num() - 1; Index >= 0; --Index)
+		{
+			const TSharedPtr<FJsonObject>* MsgPtr = nullptr;
+			FString Role;
+			if (ChatMessages[Index].IsValid() && ChatMessages[Index]->TryGetObject(MsgPtr) && MsgPtr
+				&& (*MsgPtr)->TryGetStringField(TEXT("role"), Role) && Role == TEXT("user"))
+			{
+				MarkLastTextPart(*MsgPtr);
+				break;
+			}
+		}
 	}
 
 	TSharedPtr<FJsonValue> MakeMessage(const FString& Role, const FString& Content)
@@ -332,9 +400,20 @@ TSharedPtr<FJsonObject> FOpenAIChatProvider::BuildRequestBodyWithCaps(
 		}
 		TranslateMessage(*MsgPtr, ChatMessages);
 	}
+	// Claude through OpenRouter caches only at explicit cache_control
+	// breakpoints, as on Anthropic's own API (Eden chatCompletionsProtocol.h).
+	if (UsesAnthropicCacheMarkers(KismetAIProviders::WireModelId(Config, Profile)))
+	{
+		KismetAIOpenAIChat::AddCacheMarkers(ChatMessages);
+	}
 	Body->SetArrayField(TEXT("messages"), ChatMessages);
 
 	return Body;
+}
+
+bool FOpenAIChatProvider::UsesAnthropicCacheMarkers(const FString& WireModel)
+{
+	return WireModel.StartsWith(TEXT("anthropic/"), ESearchCase::IgnoreCase);
 }
 
 void FOpenAIChatProvider::TranslateMessage(
@@ -602,6 +681,14 @@ void FOpenAIChatProvider::ParseErrorBody(
 	else if (!Type.IsEmpty())
 	{
 		Outcome.ErrorType = Type;
+	}
+
+	if (KismetAIModelsApi::IsToolsUnsupportedMessage(Outcome.ErrorMessage))
+	{
+		Outcome.ErrorType = TEXT("tools_unsupported");
+		Outcome.ErrorMessage = KismetAIModelsApi::ToolsUnsupportedMessage(Profile.DisplayName, TEXT("This model"))
+			+ TEXT(" (server: ") + Outcome.ErrorMessage + TEXT(")");
+		return;
 	}
 
 	// Context overflow. Wording differs per server:

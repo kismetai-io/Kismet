@@ -7,6 +7,7 @@
 #include "KismetAIAnthropicProvider.h"
 #include "KismetAIOpenAIProvider.h"
 #include "KismetAIMinimaxProvider.h"
+#include "KismetAIProviderProfile.h"
 #include "Misc/AutomationTest.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
@@ -93,12 +94,12 @@ bool FModelCatalog_NewLineupIsListed::RunTest(const FString& Parameters)
 	{
 		Listed.Add(Entry->Id);
 	}
-	for (const TCHAR* Id : { TEXT("claude-opus-5-5"), TEXT("claude-fable-5-1"), TEXT("claude-sonnet-5-5"),
+	for (const TCHAR* Id : { TEXT("claude-opus-5-5"), TEXT("claude-fable-5-2"), TEXT("claude-sonnet-5-5"),
 		TEXT("claude-haiku-5-5"), TEXT("gpt-6-astra"), TEXT("gpt-6.1-sol"), TEXT("gpt-6.1-terra"), TEXT("gpt-6-luna") })
 	{
 		TestTrue(FString::Printf(TEXT("%s is in the picker"), Id), Listed.Contains(Id));
 	}
-	for (const TCHAR* Id : { TEXT("claude-opus-4-8"), TEXT("claude-sonnet-4-6"), TEXT("claude-haiku-4-5-20251001"), TEXT("gpt-5.5") })
+	for (const TCHAR* Id : { TEXT("claude-fable-5-1"), TEXT("claude-opus-4-8"), TEXT("claude-sonnet-4-6"), TEXT("claude-haiku-4-5-20251001"), TEXT("gpt-5.5") })
 	{
 		TestFalse(FString::Printf(TEXT("%s is no longer a picker row"), Id), Listed.Contains(Id));
 		TestEqual(FString::Printf(TEXT("%s still resolves for saved settings"), Id),
@@ -229,7 +230,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FModelCatalog_Claude5RequestShape,
 bool FModelCatalog_Claude5RequestShape::RunTest(const FString& Parameters)
 {
 	FAnthropicProvider Provider;
-	for (const TCHAR* Model : { TEXT("claude-opus-5-5"), TEXT("claude-fable-5-1"), TEXT("claude-sonnet-5-5"),
+	for (const TCHAR* Model : { TEXT("claude-opus-5-5"), TEXT("claude-fable-5-2"), TEXT("claude-fable-5-1"), TEXT("claude-sonnet-5-5"),
 		TEXT("claude-haiku-5-5"), TEXT("claude-opus-5-5-20270101") })
 	{
 		for (EThinkingMode Mode : { EThinkingMode::Adaptive, EThinkingMode::Enabled, EThinkingMode::Disabled })
@@ -403,5 +404,253 @@ bool FModelCatalog_UnknownRequestOmitsThinking::RunTest(const FString& Parameter
 	TestFalse(TEXT("no assumed thinking field reaches the request"), Body->HasField(TEXT("thinking")));
 	TestFalse(TEXT("request shape records thinking absent"), Shape.bThinkingEnabled);
 	TestFalse(TEXT("no unverified beta reaches headers"), JoinedHeaders(Provider, Config, Shape).Contains(TEXT("interleaved-thinking")));
+	return true;
+}
+
+// ── Model list parity with Eden (2026-11-25) ─────────────────────────────────
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FModelCatalog_Fable52,
+	"KismetAI.ModelCatalog.Fable52", ModelCatalogTestFlags)
+bool FModelCatalog_Fable52::RunTest(const FString& Parameters)
+{
+	const FKismetAIModelCatalog& Catalog = FKismetAIModelCatalog::Get();
+	for (const TCHAR* Name : { TEXT("claude-fable-5-2"), TEXT("fable"), TEXT("fable-5-2"), TEXT("fable-5.2") })
+	{
+		TestEqual(FString::Printf(TEXT("%s -> Fable 5.2"), Name), Catalog.Resolve(Name), FString(TEXT("claude-fable-5-2")));
+	}
+	const FKismetAIModelEntry* Fable = Catalog.Find(TEXT("fable"));
+	if (!TestNotNull(TEXT("Fable 5.2 found"), Fable)) return false;
+	TestTrue(TEXT("in the picker"), Fable->bInPicker);
+	TestEqual(TEXT("1M context"), Fable->ContextWindow, 1000000);
+	TestEqual(TEXT("128k output"), Fable->MaxOutputTokens, 128000);
+	TestEqual(TEXT("input $8"), Fable->Price.Input, 8.0);
+	TestEqual(TEXT("output $40"), Fable->Price.Output, 40.0);
+	TestEqual(TEXT("cache read $0.20"), Fable->Price.CacheRead, 0.2);
+	TestEqual(TEXT("cache write $10"), Fable->Price.CacheWrite, 10.0);
+	TestTrue(TEXT("adaptive thinking always on"), Fable->Caps.bAdaptiveThinking && Fable->Caps.bThinkingAlwaysOn && !Fable->Caps.bBudgetThinking);
+	TestEqual(TEXT("effort low..max"), FString::Join(Fable->Caps.EffortLevels, TEXT(",")), FString(TEXT("low,medium,high,xhigh,max")));
+	TestTrue(TEXT("same request shape as 5.1: block binding"), Fable->Caps.bThinkingBlockBinding);
+
+	const FKismetAIModelEntry* Old = Catalog.Find(TEXT("fable-5.1"));
+	if (!TestNotNull(TEXT("Fable 5.1 still resolves"), Old)) return false;
+	TestEqual(TEXT("5.1 id"), Old->Id, FString(TEXT("claude-fable-5-1")));
+	TestFalse(TEXT("5.1 left the picker"), Old->bInPicker);
+	TestEqual(TEXT("5.1 keeps its own price"), Old->Price.Input, 10.0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FModelCatalog_KimiModels,
+	"KismetAI.ModelCatalog.KimiModels", ModelCatalogTestFlags)
+bool FModelCatalog_KimiModels::RunTest(const FString& Parameters)
+{
+	const FKismetAIModelCatalog& Catalog = FKismetAIModelCatalog::Get();
+	struct FCase { const TCHAR* Name; const TCHAR* Id; double Input; double Output; };
+	for (const FCase& Case : {
+		FCase{ TEXT("kimi"), TEXT("kimi-k3.1-pro"), 2.0, 10.0 },
+		FCase{ TEXT("kimi-highspeed"), TEXT("kimi-k3.1-pro-highspeed"), 4.0, 20.0 },
+		FCase{ TEXT("kimi-k3"), TEXT("kimi-k3"), 3.0, 15.0 } })
+	{
+		const FKismetAIModelEntry* Entry = Catalog.Find(Case.Name);
+		if (!TestNotNull(Case.Name, Entry)) continue;
+		TestEqual(FString(Case.Name) + TEXT(": id"), Entry->Id, FString(Case.Id));
+		TestEqual(FString(Case.Name) + TEXT(": moonshot"), Entry->Provider, FString(TEXT("moonshot")));
+		TestTrue(FString(Case.Name) + TEXT(": in the picker"), Entry->bInPicker);
+		TestEqual(FString(Case.Name) + TEXT(": context"), Entry->ContextWindow, 1048576);
+		TestEqual(FString(Case.Name) + TEXT(": max output"), Entry->MaxOutputTokens, 131072);
+		TestEqual(FString(Case.Name) + TEXT(": input"), Entry->Price.Input, Case.Input);
+		TestEqual(FString(Case.Name) + TEXT(": output"), Entry->Price.Output, Case.Output);
+		TestEqual(FString(Case.Name) + TEXT(": effort low/high/max"), FString::Join(Entry->Caps.EffortLevels, TEXT(",")), FString(TEXT("low,high,max")));
+		TestFalse(FString(Case.Name) + TEXT(": no thinking field (K3 always reasons)"), Entry->Caps.bThinking);
+	}
+
+	// Fast mode on K3.1 Pro sends the high-speed variant.
+	FKismetAIAgentConfig Cfg = MakeCatalogTestConfig(TEXT("kimi-k3.1-pro"));
+	Cfg.ProviderKeys.Add(TEXT("moonshot"), TEXT("sk-moon"));
+	const FKismetAIProviderProfile& Moonshot = KismetAIProviders::ResolveProfile(Cfg);
+	TestEqual(TEXT("standard id"), KismetAIProviders::WireModelId(Cfg, Moonshot), FString(TEXT("kimi-k3.1-pro")));
+	Cfg.bFastMode = true;
+	TestEqual(TEXT("fast swaps the model"), KismetAIProviders::WireModelId(Cfg, Moonshot), FString(TEXT("kimi-k3.1-pro-highspeed")));
+	TestEqual(TEXT("fast price"), FKismetAIAgent::GetModelCost(TEXT("kimi-k3.1-pro"), true).InputPerMillion, 4.0);
+	FLLMRequestShape Shape;
+	const TSharedPtr<FJsonObject> Body = BuildBody(*MakeProviderForConfig(Cfg), Cfg, Shape);
+	TestEqual(TEXT("request carries the high-speed id"), Body->GetStringField(TEXT("model")), FString(TEXT("kimi-k3.1-pro-highspeed")));
+	const TSharedPtr<FJsonObject>* OutputConfig = nullptr;
+	TestTrue(TEXT("effort sent as output_config"), Body->TryGetObjectField(TEXT("output_config"), OutputConfig));
+	TestFalse(TEXT("no thinking field"), Body->HasField(TEXT("thinking")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FModelCatalog_VendorReasoning,
+	"KismetAI.ModelCatalog.VendorReasoning", ModelCatalogTestFlags)
+bool FModelCatalog_VendorReasoning::RunTest(const FString& Parameters)
+{
+	const FKismetAIModelCatalog& Catalog = FKismetAIModelCatalog::Get();
+	for (const TCHAR* Id : { TEXT("deepseek-v4-pro"), TEXT("deepseek-flash") })
+	{
+		const FKismetAIModelCapabilities& Caps = Catalog.FindOrDefaults(Id).Caps;
+		TestTrue(FString(Id) + TEXT(": thinking"), Caps.bThinking && Caps.bAdaptiveThinking && !Caps.bBudgetThinking);
+		TestEqual(FString(Id) + TEXT(": effort"), FString::Join(Caps.EffortLevels, TEXT(",")), FString(TEXT("low,high,max")));
+	}
+	const FKismetAIModelCapabilities& Flash = Catalog.FindOrDefaults(TEXT("minimax-flash")).Caps;
+	TestTrue(TEXT("M3.1 Flash always thinks"), Flash.bThinking && Flash.bThinkingAlwaysOn);
+	TestEqual(TEXT("M3.1 Flash effort"), Flash.EffortLevels.Num(), 5);
+	TestEqual(TEXT("M3 has no effort (rejects reasoning_effort)"), Catalog.FindOrDefaults(TEXT("MiniMax-M3")).Caps.EffortLevels.Num(), 0);
+	TestFalse(TEXT("GLM-5.3 takes no images"), Catalog.FindOrDefaults(TEXT("glm-5.3")).Caps.bImageInput);
+
+	FKismetAIAgentConfig Cfg = MakeCatalogTestConfig(TEXT("MiniMax-M3.1-Flash"));
+	FLLMRequestShape Shape;
+	const TSharedPtr<FJsonObject> Body = BuildBody(*MakeProviderForConfig(Cfg), Cfg, Shape);
+	const TSharedPtr<FJsonObject>* Thinking = nullptr;
+	TestTrue(TEXT("M3.1 Flash: adaptive thinking sent"), Body->TryGetObjectField(TEXT("thinking"), Thinking)
+		&& (*Thinking)->GetStringField(TEXT("type")) == TEXT("adaptive"));
+	TestTrue(TEXT("M3.1 Flash: effort sent"), Body->HasField(TEXT("output_config")));
+
+	for (const TCHAR* Id : { TEXT("gemini-4-argon"), TEXT("gemini-3.8-flash") })
+	{
+		TestEqual(FString(Id) + TEXT(": max output"), Catalog.FindOrDefaults(Id).MaxOutputTokens, 65536);
+	}
+	for (const TCHAR* Id : { TEXT("deepseek-v4-pro"), TEXT("deepseek-flash"), TEXT("glm-5.3"), TEXT("glm-5.3-flash"),
+		TEXT("kimi-k3.1-pro"), TEXT("MiniMax-M3"), TEXT("MiniMax-M3.1-Flash") })
+	{
+		TestEqual(FString(Id) + TEXT(": max output"), Catalog.FindOrDefaults(Id).MaxOutputTokens, 131072);
+	}
+	TestEqual(TEXT("gpt-5.4-nano name"), FKismetAIAgent::GetModelDisplayName(TEXT("gpt-5.4-nano")), FString(TEXT("GPT-5.4 Nano")));
+	TestEqual(TEXT("gpt-5-nano name"), FKismetAIAgent::GetModelDisplayName(TEXT("gpt-5-nano")), FString(TEXT("GPT-5 Nano")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FModelCatalog_OpenRouterRows,
+	"KismetAI.ModelCatalog.OpenRouterRows", ModelCatalogTestFlags)
+bool FModelCatalog_OpenRouterRows::RunTest(const FString& Parameters)
+{
+	const FKismetAIModelCatalog& Catalog = FKismetAIModelCatalog::Get();
+	struct FRow { const TCHAR* Id; const TCHAR* Name; const TCHAR* Base; };
+	const TArray<FRow> Expected = {
+		{ TEXT("anthropic/claude-opus-5.5"), TEXT("Claude Opus 5.5"), TEXT("claude-opus-5-5") },
+		{ TEXT("anthropic/claude-fable-5.2"), TEXT("Claude Fable 5.2"), TEXT("claude-fable-5-2") },
+		{ TEXT("anthropic/claude-sonnet-5.5"), TEXT("Claude Sonnet 5.5"), TEXT("claude-sonnet-5-5") },
+		{ TEXT("anthropic/claude-haiku-5.5"), TEXT("Claude Haiku 5.5"), TEXT("claude-haiku-5-5") },
+		{ TEXT("openai/gpt-6-astra"), TEXT("GPT-6 Astra"), TEXT("gpt-6-astra") },
+		{ TEXT("openai/gpt-6.1-sol"), TEXT("GPT-6.1 Sol"), TEXT("gpt-6.1-sol") },
+		{ TEXT("openai/gpt-6.1-terra"), TEXT("GPT-6.1 Terra"), TEXT("gpt-6.1-terra") },
+		{ TEXT("openai/gpt-6-luna"), TEXT("GPT-6 Luna"), TEXT("gpt-6-luna") },
+		{ TEXT("google/gemini-4-argon"), TEXT("Gemini 4 Argon"), TEXT("gemini-4-argon") },
+		{ TEXT("google/gemini-3.8-flash"), TEXT("Gemini 3.8 Flash"), TEXT("gemini-3.8-flash") },
+		{ TEXT("deepseek/deepseek-v4-pro"), TEXT("DeepSeek V4 Pro"), TEXT("deepseek-v4-pro") },
+		{ TEXT("deepseek/deepseek-v4.1-flash"), TEXT("DeepSeek V4.1 Flash"), TEXT("deepseek-flash") },
+		{ TEXT("z-ai/glm-5.3"), TEXT("GLM 5.3"), TEXT("glm-5.3") },
+		{ TEXT("moonshotai/kimi-k3.1-pro"), TEXT("Kimi K3.1 Pro"), TEXT("kimi-k3.1-pro") },
+		{ TEXT("minimax/minimax-m3.1-flash"), TEXT("MiniMax M3.1 Flash"), TEXT("MiniMax-M3.1-Flash") },
+		{ TEXT("x-ai/grok-4.7"), TEXT("Grok 4.7"), nullptr },
+		{ TEXT("qwen/qwen3.8-max-prime"), TEXT("Qwen 3.8 Max Prime"), nullptr },
+	};
+
+	// The OpenRouter group is contiguous: the direct rows' order, then OpenRouter-only models.
+	TArray<FString> Group;
+	bool bGroupEnded = false;
+	bool bSplit = false;
+	for (const FKismetAIModelEntry* Entry : Catalog.GetPickerModels())
+	{
+		if (Entry->Provider == TEXT("openrouter"))
+		{
+			bSplit |= bGroupEnded;
+			Group.Add(Entry->Id);
+		}
+		else if (Group.Num() > 0)
+		{
+			bGroupEnded = true;
+		}
+	}
+	TestFalse(TEXT("OpenRouter rows are one group"), bSplit);
+	TArray<FString> ExpectedIds;
+	for (const FRow& Row : Expected) ExpectedIds.Add(Row.Id);
+	TestEqual(TEXT("OpenRouter picker rows"), FString::Join(Group, TEXT(", ")), FString::Join(ExpectedIds, TEXT(", ")));
+
+	for (const FRow& Row : Expected)
+	{
+		const FKismetAIModelEntry* Entry = Catalog.Find(Row.Id);
+		if (!TestNotNull(Row.Id, Entry)) continue;
+		TestEqual(FString(Row.Id) + TEXT(": exact entry"), Entry->Id, FString(Row.Id));
+		TestEqual(FString(Row.Id) + TEXT(": name"), Entry->DisplayName, FString(Row.Name));
+		TestEqual(FString(Row.Id) + TEXT(": routes to OpenRouter"), KismetAIProviders::ProviderIdForModel(Row.Id), FString(TEXT("openrouter")));
+		TestEqual(FString(Row.Id) + TEXT(": the alias resolves"), Catalog.Resolve(Entry->Alias), FString(Row.Id));
+		TestTrue(FString(Row.Id) + TEXT(": no fast tier through OpenRouter"), Entry->Caps.FastModeWire == EKismetAIFastModeWire::None);
+		TestFalse(FString(Row.Id) + TEXT(": no Anthropic thinking field"), Entry->Caps.bThinking);
+		if (Row.Base)
+		{
+			const FKismetAIModelEntry* Base = Catalog.Find(Row.Base);
+			if (!TestNotNull(Row.Base, Base)) continue;
+			TestEqual(FString(Row.Id) + TEXT(": derived from its base"), Entry->DerivedFrom, Base->Id);
+			TestEqual(FString(Row.Id) + TEXT(": base context"), Entry->ContextWindow, Base->ContextWindow);
+			TestEqual(FString(Row.Id) + TEXT(": base max output"), Entry->MaxOutputTokens, Base->MaxOutputTokens);
+			TestEqual(FString(Row.Id) + TEXT(": base image input"), Entry->Caps.bImageInput, Base->Caps.bImageInput);
+			if (FCString::Strcmp(Row.Base, TEXT("kimi-k3.1-pro")) != 0)
+			{
+				TestEqual(FString(Row.Id) + TEXT(": base price"), Entry->Price.Input, Base->Price.Input);
+			}
+		}
+	}
+
+	// Reasoning through OpenRouter: reasoning_effort in the levels OpenRouter normalises.
+	const FKismetAIModelEntry* Opus = Catalog.Find(TEXT("anthropic/claude-opus-5.5"));
+	TestTrue(TEXT("Claude via OpenRouter sends reasoning_effort"), Opus && Opus->Caps.bReasoning);
+	TestEqual(TEXT("Claude via OpenRouter effort levels"), Opus ? FString::Join(Opus->Caps.EffortLevels, TEXT(",")) : FString(), FString(TEXT("low,medium,high")));
+	const FKismetAIModelEntry* Glm = Catalog.Find(TEXT("z-ai/glm-5.3"));
+	TestTrue(TEXT("GLM via OpenRouter sends effort"), Glm && Glm->Caps.bReasoning && Glm->Caps.EffortLevels.Num() == 2);
+	TestFalse(TEXT("GLM via OpenRouter takes no images"), Glm && Glm->Caps.bImageInput);
+	const FKismetAIModelEntry* Grok = Catalog.Find(TEXT("grok"));
+	TestTrue(TEXT("grok alias"), Grok && Grok->Id == TEXT("x-ai/grok-4.7") && Grok->ContextWindow == 500000 && Grok->MaxOutputTokens == 131072);
+	const FKismetAIModelEntry* Qwen = Catalog.Find(TEXT("qwen"));
+	TestTrue(TEXT("qwen alias"), Qwen && Qwen->Id == TEXT("qwen/qwen3.8-max-prime") && Qwen->ContextWindow == 1000000);
+
+	// Typing an id still works on OpenRouter.
+	TestTrue(TEXT("OpenRouter keeps custom models"), FKismetAIProviderRegistry::Get().Find(TEXT("openrouter"))->bCustomModels);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FModelCatalog_OpenRouterDerivationRules,
+	"KismetAI.ModelCatalog.OpenRouterDerivationRules", ModelCatalogTestFlags)
+bool FModelCatalog_OpenRouterDerivationRules::RunTest(const FString& Parameters)
+{
+	FKismetAIModelCatalog Catalog;
+	FString Error;
+	TestFalse(TEXT("openrouter_id needs a vendor prefix"), Catalog.LoadFromJson(TEXT(R"({"schema_version":1,"models":[
+		{"id":"m","alias":"m","display_name":"M","provider":"x","picker":true,"openrouter_id":"no-slash"}]})"), Error));
+	TestFalse(TEXT("a derived id may not collide"), Catalog.LoadFromJson(TEXT(R"({"schema_version":1,"models":[
+		{"id":"a","display_name":"A","provider":"x","picker":true,"openrouter_id":"v/a"},
+		{"id":"v/a","display_name":"B","provider":"openrouter"}]})"), Error));
+	TestTrue(TEXT("derivation loads"), Catalog.LoadFromJson(TEXT(R"({"schema_version":1,"models":[
+		{"id":"a","alias":"a","display_name":"A","provider":"x","picker":true,"openrouter_id":"v/a","openrouter_picker":false,
+		 "pricing":{"input":1,"output":2},"openrouter_pricing":{"input":3,"output":4}}]})"), Error));
+	const FKismetAIModelEntry* Derived = Catalog.Find(TEXT("v/a"));
+	TestTrue(TEXT("openrouter_picker false hides the row"), Derived && !Derived->bInPicker);
+	TestTrue(TEXT("openrouter_pricing overrides"), Derived && Derived->Price.Input == 3.0);
+	TestEqual(TEXT("base keeps its price"), Catalog.Find(TEXT("a"))->Price.Input, 1.0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FModelCatalog_RuntimeOverlay,
+	"KismetAI.ModelCatalog.RuntimeOverlay", ModelCatalogTestFlags)
+bool FModelCatalog_RuntimeOverlay::RunTest(const FString& Parameters)
+{
+	FKismetAIModelCatalog Catalog;
+	FString Error;
+	TestTrue(TEXT("loads"), Catalog.LoadFromJson(TEXT(R"({"schema_version":1,"models":[
+		{"id":"a","alias":"a","display_name":"A","provider":"x","picker":true,"context_window":1000}]})"), Error));
+	FKismetAIModelEntry Live = *Catalog.Find(TEXT("a"));
+	Live.ContextWindow = 2000;
+	FKismetAIModelEntry Local;
+	Local.Id = TEXT("local:1b");
+	Local.ContextWindow = 4096;
+	Catalog.SetRuntimeEntries(TEXT("x"), { Live, Local });
+	const FKismetAIModelEntry* Before = Catalog.Find(TEXT("a"));
+	TestEqual(TEXT("overlay wins by exact id"), Before->ContextWindow, 2000);
+	TestEqual(TEXT("alias resolves to the overlaid id"), Catalog.Resolve(TEXT("a")), FString(TEXT("a")));
+	TestEqual(TEXT("overlay-only id resolves"), Catalog.Resolve(TEXT("LOCAL:1B")), FString(TEXT("local:1b")));
+	TestEqual(TEXT("overlay rows belong to their owner"), Catalog.Find(TEXT("local:1b"))->Provider, FString(TEXT("x")));
+	Catalog.ClearRuntimeEntries(TEXT("x"));
+	TestEqual(TEXT("cleared: shipped entry again"), Catalog.Find(TEXT("a"))->ContextWindow, 1000);
+	TestTrue(TEXT("cleared: overlay-only id gone"), Catalog.Resolve(TEXT("local:1b")).IsEmpty());
+	TestEqual(TEXT("a pointer handed out earlier stays valid"), Before->ContextWindow, 2000);
 	return true;
 }

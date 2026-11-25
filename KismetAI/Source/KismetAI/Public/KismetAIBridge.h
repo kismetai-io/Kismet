@@ -274,6 +274,19 @@ public:
 	UFUNCTION()
 	FString SetProvider(const FString& ProviderId, const FString& Model, const FString& BaseUrl);
 
+	/**
+	 * Set the context window a local or custom model really runs with
+	 * (Tokens <= 0 clears it back to the reported or assumed figure). Persists
+	 * to settings.json. Returns the window now in use, or 0 when refused
+	 * (cloud provider, unknown profile, empty id).
+	 */
+	UFUNCTION()
+	int32 SetModelContextWindow(const FString& ProviderId, const FString& ModelId, int32 Tokens);
+
+	/** Re-list local servers and refresh stale cloud model lists in the background. */
+	UFUNCTION()
+	void RefreshModels();
+
 	/** True once the first-run account welcome has been answered (signed in or skipped). */
 	UFUNCTION()
 	bool IsAccountWelcomeSeen();
