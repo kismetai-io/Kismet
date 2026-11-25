@@ -4535,7 +4535,58 @@ if (typeof marked !== 'undefined') {
 			return code;
 		}
 	});
+
+	// Model output is untrusted: it can quote asset contents, files and web
+	// pages, and this page holds the editor bridge (window.ue.kismetai). So raw
+	// HTML is shown as text, links go only to http(s)/mailto or to an asset, and
+	// nothing in a reply loads from the network. These renderers are the only
+	// path from markdown to markup; renderMarkdown adds its own fixed markup after.
+	marked.use({
+		renderer: {
+			html: function(token) { return escapeHtml(token.text); },
+			link: function(token) {
+				var label = this.parser.parseInline(token.tokens);
+				return markdownLink(token.href, token.title, label);
+			},
+			image: function(token) {
+				var alt = escapeHtml(token.text || '');
+				var src = String(token.href || '').trim();
+				// Inline data images need no request; anything else becomes a link.
+				if (/^data:image\/(?:png|jpe?g|gif|webp);base64,[A-Za-z0-9+\/=]+$/i.test(src)) {
+					return '<img src="' + escapeHtml(src) + '" alt="' + alt + '">';
+				}
+				return markdownLink(src, token.title, alt || escapeHtml(src));
+			}
+		}
+	});
 }
+
+// href is untrusted. Returns an external link the click handler below routes to
+// the system browser, an asset link, or the label alone.
+function markdownLink(href, title, labelHtml) {
+	var url = String(href || '').trim();
+	var titleAttr = title ? ' title="' + escapeHtml(title) + '"' : '';
+	if (/^(?:https?:\/\/|mailto:)/i.test(url)) {
+		return '<a class="md-link" href="' + escapeHtml(url) + '"' + titleAttr + ' rel="noopener noreferrer">' + labelHtml + '</a>';
+	}
+	var asset = url.match(ASSET_PATH_RE);
+	if (asset && asset[0] === url) {
+		return '<a class="asset-link md-asset-link" role="link" tabindex="0" data-asset="' + escapeHtml(url) + '"' + titleAttr + '>' + labelHtml + '</a>';
+	}
+	return labelHtml;
+}
+
+// A link in a reply never navigates the panel: a page loaded here would get
+// the bridge. External links open in the system browser, assets in the editor.
+document.addEventListener('click', function(e) {
+	var a = e.target && e.target.closest ? e.target.closest('a.md-link, a.md-asset-link') : null;
+	if (!a) return;
+	e.preventDefault();
+	if (a.dataset.asset) { openAsset(a.dataset.asset); return; }
+	var url = a.getAttribute('href') || '';
+	if (!/^(?:https?:\/\/|mailto:)/i.test(url)) return;
+	if (window.ue && window.ue.kismetai && window.ue.kismetai.openinbrowser) window.ue.kismetai.openinbrowser(url);
+}, true);
 
 // ─── Bridge Readiness ───
 function waitForBridge() {
@@ -5103,7 +5154,9 @@ function linkifyAssetPaths(html) {
 	// (e.g. `/Game/Foo.Foo`), and those should be clickable. The inner <code>
 	// of a <pre> is already consumed by the <pre>…</pre> match, so only
 	// standalone inline code spans reach the replace below.
-	var parts = html.split(/(<pre[\s\S]*?<\/pre>)/g);
+	// Tags and existing links are kept too, so a path inside an attribute
+	// (href, title, data-asset) or a link label is never rewritten.
+	var parts = html.split(/(<pre[\s\S]*?<\/pre>|<a\b[\s\S]*?<\/a>|<[^>]*>)/g);
 	for (var i = 0; i < parts.length; i += 2) {
 		parts[i] = parts[i].replace(ASSET_PATH_RE, function(path) {
 			return '<a class="asset-link" title="Open ' + path + '" '

@@ -1,0 +1,14 @@
+{
+  "name": "kismet-panel-ui-tests",
+  "private": true,
+  "description": "Behaviour tests for the editor panel page KismetAI/Config/ui.html",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:chromium": "playwright test --project=chromium",
+    "test:webkit": "playwright test --project=webkit"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1"
+  }
+}
